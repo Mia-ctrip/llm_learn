@@ -1,0 +1,851 @@
+[
+  {
+    "Genius-UI 用于Grounding的sft模型": "LLM防火墙影子模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "修正ugc机审notpass模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "度假ai机器翻译GPU后台python服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研-transformer 300M * 5 (单卡5个模型)",
+    "L20_2_96": "T4"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "度假ai机器翻译GPU后台python服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研-transformer 300M * 5 (单卡5个模型)",
+    "L20_2_96": "T4"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "度假ai机器翻译GPU后台python服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研-transformer 300M * 5 (单卡5个模型)",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图像水印去除应用",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图像水印去除应用",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图像水印去除应用",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店质量分2020Q2",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图像新版清晰度打分",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店旅拍图像清晰度提升",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "V100_1_32"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店旅拍图像清晰度提升",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店旅拍图像清晰度提升",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "T4"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店旅拍图像清晰度提升",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "V100"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "tripgpt语言模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14B",
+    "L20_2_96": "A100_1_80"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "tripgpt语言模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14B",
+    "L20_2_96": "A100_1_80"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "tripgpt语言模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14B",
+    "L20_2_96": "A100_1_80"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "tripgpt语言模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "bge-large（300M左右） * 4",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "tripgpt语言模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "bge-large（300M左右） * 4 + qwen0.5",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "tripgpt语言模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "bge-large（300M左右）* 2",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "tripgpt语言模型",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen0.5 *2",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "AITripGPT评估环境",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5 14b",
+    "L20_2_96": "A100_1_80"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店入库小图放大并缩放至指定尺寸",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店入库小图放大并缩放至指定尺寸",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店入库小图放大并缩放至指定尺寸",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "stable diffusion",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "基础算法大模型推理应用（非上线应用）",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14b",
+    "L20_2_96": "A100_1_80"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "基础算法大模型推理应用（非上线应用）",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-72b",
+    "L20_2_96": "A100_1_80"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "基础算法大模型推理应用（非上线应用）",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14b",
+    "L20_2_96": "A100_1_80"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜llm大语言模型服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14b",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜llm大语言模型服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14b",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "旅游线路产品大模型训练推理",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen3",
+    "L20_2_96": "H20_1_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "旅游线路产品大模型训练推理",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen3",
+    "L20_2_96": "H20_8_768"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "旅游线路产品大模型训练推理",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen3",
+    "L20_2_96": "H20_1_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "旅游线路产品大模型训练推理",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3",
+    "L20_2_96": "H20_1_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "旅游线路产品大模型训练推理",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "Qwen3.5-27b",
+    "L20_2_96": "H20_8_768"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "旅游线路产品大模型训练推理",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen3",
+    "L20_2_96": "H20_8_768"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "旅游线路产品大模型训练推理",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen3",
+    "L20_2_96": "H20_8_768"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "问道片段文本敏感词检测",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "Qwen3",
+    "L20_2_96": "L20_2_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "信息流GPU 模型服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "信息流GPU 模型服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组2",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组2",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "问道query推荐应用",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen2.5",
+    "L20_2_96": "L20_2_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "问道query推荐应用",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "Qwen2.5",
+    "L20_2_96": "L20_2_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜端到端检索模型服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "mt5, bert, qwen, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜端到端检索模型服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "mt5, bert, qwen, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜端到端检索模型服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "mt5, bert, qwen, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜通用模型推理服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜通用模型推理服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜通用模型推理服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "QQ匹配相关型判断服务",
+    "开源模型微调": null,
+    "Qwen3-vl-32b": "已缩容",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "内容中心媒体ai模型服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "whisper/rapidocr/htdemucs_ft",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "机器学习通用模型服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "MGEO",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "问道query推荐SFT版本",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen2.5",
+    "L20_2_96": "L20_2_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "搜索nlp大模型服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "搜索nlp大模型服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "搜索nlp大模型服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜llm大语言模型意图服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14b",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜llm大语言模型意图服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5-14b",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "agentic-rag",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen2.5 7b",
+    "L20_2_96": "H20_1_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务gray",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组3",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组3",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组4",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组4",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组5",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组5",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组6",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "首页信息流GPU在线推理服务分组6",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜端到端模型sid服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜端到端模型sid服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "大搜端到端模型sid服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3, bert, bge",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "trip信息流GPU在线推理服务分组1",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "Trip全BU多语言智能语音识别实时引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "离线极速版转写引擎的消费者",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "离线极速版转写引擎的消费者",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "丽呈酒店ASR离线转写引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "丽呈酒店ASR离线转写引擎",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "多语言多模态ASR引擎服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "多语言多模态ASR引擎服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "多语言多模态ASR引擎服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "国际化呼入实时流回显模型",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "国际化呼入实时流回显模型",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "国际化呼入实时流回显模型",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "语音生成引擎高性能服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "语音生成引擎高性能服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "语音识别模型中文cn",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "语音识别模型中文cn",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "语音识别模型中文cn",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "语音生成高性能中控服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "语音生成高性能中控服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "用户档案模型推理服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "Qwen/Qwen3.5-35B-A3B-GPTQ-Int4",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "用户档案模型推理服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "Qwen/Qwen3-Embedding-4B",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "度假推荐算法应用服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen2-0.5B",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "旅游事业群图生文服务(i2t)",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "Qwen2.5-vl",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "火车中台图片视频优化服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Wan2.2-I2V-A14B-Distill",
+    "L20_2_96": "H20_1_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "火车中台图片视频优化服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen-Image-Edit-2511-Lightning",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "火车中台图片视频优化服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen-Image-Edit-2511-Lightning",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "火车中台图片视频优化服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Wan2.2-I2V-A14B-Distill",
+    "L20_2_96": "H20_1_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "市场BI-aigc创作平台长视频生成剪辑python应用",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "whisper/Qwen3.5 4b/Qwen tts",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "市场视频属性处理应用",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Q-Align/whisper/rapidocr",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "htl-ai-image-skysegmentation-application",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "V100_1_32"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店视频PPT片段识别",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "V100"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图片新版水印广告检测",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "yolov5",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图片新版水印广告检测",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "yolov5",
+    "L20_2_96": "T4"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图片新版水印广告检测",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "yolov5",
+    "L20_2_96": "T4"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "bert使用GPU推理服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "bert",
+    "L20_2_96": "T4"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "攻略和酒店拼接图片检测",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "Petavl",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图生视频执行主服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "wan2.5等",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图生视频执行主服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "wan2.5等",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图生视频执行主服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "wan2.5等",
+    "L20_2_96": "L20_2_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店房型设施检测实时接口",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "V100_1_32"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店房型设施检测实时接口",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "V100"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "问题图识别合并部署服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店文档搜索SOA服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "bge-m3，bge-reranker-v2-m3",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店搜索文本转向量服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3-embedding-0.6B,bge-m3,e5-small",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店搜索文本转向量服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "qwen3-embedding-0.6B,bge-m3,e5-small",
+    "L20_2_96": "T4_1_16"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店搜索大模型推理部署",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "qwen2.5/自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店搜索大模型推理部署",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "qwen2.5/自研",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图像水印去除服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "stable-diffusion-v1-5/stable-diffusion-inpainting、SelfReformer、yolo_detr",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图片擦边内容检测服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "petavl",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店赌博图分类识别服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "MiniCPM-V2.6",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店OCR传统模型管线推理服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店新版水印PS文字检测V3.0",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "ResNet",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "非标项目模型线上部署",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "Qwen3VL 8B",
+    "L20_2_96": "H20_1_96"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店图片入库打标实时接口V5",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店通用图像分割服务",
+    "开源模型微调": "自研模型",
+    "Qwen3-vl-32b": "自研小模型",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店入库小图放大并缩放至指定尺寸服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "SD",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店入库小图放大并缩放至指定尺寸服务",
+    "开源模型微调": "开源模型微调",
+    "Qwen3-vl-32b": "SD",
+    "L20_2_96": "V100"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "酒店OCR生成式模型管线推理服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "paddleocrvl",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "携程直播媒体处理应用",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "SenseVoiceSmall",
+    "L20_2_96": "L20_1_48"
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": null,
+    "开源模型微调": null,
+    "Qwen3-vl-32b": null
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": null,
+    "开源模型微调": null,
+    "Qwen3-vl-32b": null
+  },
+  {
+    "Genius-UI 用于Grounding的sft模型": "问道LLM模型推理服务",
+    "开源模型微调": "开源模型",
+    "Qwen3-vl-32b": "Kimi 2.5"
+  }
+]
