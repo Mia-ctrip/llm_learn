@@ -1,6 +1,11 @@
 import torch
+import numpy
+import pandas as pd
 import torch.nn as nn
 import torch.optim as optim
+ from torch.utils.data import Dataset
+import sklearn 
+from sklearn import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
 
@@ -32,29 +37,59 @@ class myFirstModel(nn.Module):
         return x
 
 
-# ==================== 第3步：生成随机训练数据 ====================
-def generate_random_data(num_samples=1000, seq_len=50, vocab_size=1000):
-    """
-    生成随机数据用于测试
-    返回：训练集、验证集、测试集
-    """
-    print("正在生成随机数据...")
+# ==================== 第3步：组织数据 ====================
+class MovieDataset(Dataset):    
+    def __init__(self, texts, labels, vocab, max_len=50):
+        """
+        参数:
+            texts: 文本列表 ["I love NLP", "PyTorch is great", ...]
+            labels: 标签列表 [1, 0, ...]
+            vocab: 词表字典 {"word": id, ...}
+            max_len: 序列最大长度（padding/截断）
+        """
+        self.texts = texts
+        self.labels = labels
+        self.vocab = vocab
+        self.max_len = max_len
 
-    # 生成随机 token IDs
-    X_train = torch.randint(0, vocab_size, (num_samples, seq_len))
-    y_train = torch.randint(0, 2, (num_samples,))
+    def __len__(self):
+        return len(self.texts)
 
-    X_val = torch.randint(0, vocab_size, (200, seq_len))
-    y_val = torch.randint(0, 2, (200,))
+    def __getitem__(self, idx):
+        """
+        返回一条处理好的数据
+        """
+        # 1. 获取原始文本和标签
+        text = self.texts[idx]
+        label = self.labels[idx]
 
-    X_test = torch.randint(0, vocab_size, (200, seq_len))
-    y_test = torch.randint(0, 2, (200,))
+        # 2. 分词（简化版：按空格分）
+        tokens = text.lower().split()
 
-    print(f"训练集大小: {X_train.shape}")
-    print(f"验证集大小: {X_val.shape}")
-    print(f"测试集大小: {X_test.shape}")
+        # 3. 转换为ID序列
+        token_ids = [self.vocab.get(token, 0) for token in tokens]  # 0是<UNK>
 
-    return X_train, y_train, X_val, y_val, X_test, y_test
+        # 4. Padding/截断到max_len
+        if len(token_ids) < self.max_len:
+            # Padding：补0到max_len
+            token_ids = token_ids + [0] * (self.max_len - len(token_ids))
+        else:
+            # 截断：只保留前max_len个
+            token_ids = token_ids[:self.max_len]
+
+        # 5. 转换为Tensor
+        x = torch.tensor(token_ids, dtype=torch.long)
+        y = torch.tensor(label, dtype=torch.long)
+
+        return x, y
+
+
+def load_data(data_path):
+    
+    # 拆成 3 份:训练 70% / 验证 15% / 测试 15%
+    train, temp = train_test_split(df, test_size=0.3, random_state=42)
+    val, test = train_test_split(temp, test_size=0.5, random_state=42)
+    
 
 
 # ==================== 第4步：训练函数 ====================
