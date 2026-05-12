@@ -3,7 +3,7 @@ import numpy
 import pandas as pd
 import torch.nn as nn
 import torch.optim as optim
- from torch.utils.data import Dataset
+from torch.utils.data import Dataset
 import sklearn 
 from sklearn import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
@@ -85,11 +85,25 @@ class MovieDataset(Dataset):
 
 
 def load_data(data_path):
-    
+    df = pd.load_csv(data_path)
+    """从文本列表构建词表"""
+    from collections import Counter
+    word_counts = Counter()
+    for i in range(len(df)):
+        sentence = df.iloc[i]
+        sentence_review = sentence[review]
+        sentence_sentiment = sentence[sentiment]
+        tokens = sentence_review.lower().split()
+        word_counts.update(tokens)
+    # 只保留出现>=min_freq次的词
+    vocab = {"<PAD>": 0, "<UNK>": 1}
+    for word, count in word_counts.items():
+        if count >= min_freq:
+            vocab[word] = len(vocab)
     # 拆成 3 份:训练 70% / 验证 15% / 测试 15%
     train, temp = train_test_split(df, test_size=0.3, random_state=42)
     val, test = train_test_split(temp, test_size=0.5, random_state=42)
-    
+    return train[review],train[sentiment],val[review],val[sentiment], test[review],test[sentiment]
 
 
 # ==================== 第4步：训练函数 ====================
@@ -207,12 +221,12 @@ if __name__ == "__main__":
     print("="*60)
 
     # 1. 生成数据
-    X_train, y_train, X_val, y_val, X_test, y_test = generate_random_data()
+    X_train, y_train, X_val, y_val, X_test, y_test, vocab = load_data()
 
     # 2. 创建 DataLoader
-    train_dataset = TensorDataset(X_train, y_train)
-    val_dataset = TensorDataset(X_val, y_val)
-    test_dataset = TensorDataset(X_test, y_test)
+    train_dataset = MovieDataset(X_train, y_train,vocab)
+    val_dataset = MovieDataset(X_val, y_val,vocab)
+    test_dataset = MovieDataset(X_test, y_test,vocab)
 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=32)
