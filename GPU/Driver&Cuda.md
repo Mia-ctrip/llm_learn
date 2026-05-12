@@ -117,5 +117,3 @@ NVIDIA 有个"兼容包"可以让**老 Driver 跑新 CUDA**，但仅限数据中
 
 > **Driver 让 GPU 能用；CUDA Toolkit 让你能"写程序"用 GPU。**
 > **Driver 决定 CUDA 能用到哪一代；CUDA 决定你能用到哪些开发功能。**
-
-你原先的理解已经非常接近官方描述了，只需记住一个细节：**`libcuda.so` 属于 Driver，不属于 CUDA Toolkit** —— 这是大多数人踩坑的地方。
