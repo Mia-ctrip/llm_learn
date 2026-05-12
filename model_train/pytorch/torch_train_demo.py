@@ -84,26 +84,59 @@ class MovieDataset(Dataset):
         return x, y
 
 
-def load_data(data_path):
-    df = pd.load_csv(data_path)
-    """从文本列表构建词表"""
+def load_data(data_path, min_freq=2):
+    """
+    加载 IMDB 数据集并构建词表
+
+    参数:
+        data_path: CSV 文件路径（需要有 'review' 和 'sentiment' 列）
+        min_freq: 词频阈值，低于此频率的词会被过滤
+
+    返回:
+        train_texts, train_labels, val_texts, val_labels, test_texts, test_labels, vocab
+    """
+    # 1. 读取 CSV
+    df = pd.read_csv(data_path)  # ✅ 修正：load_csv → read_csv
+
+    # 2. 转换标签为数字（positive=1, negative=0）
+    df['label'] = df['sentiment'].map({'positive': 1, 'negative': 0})
+
+    # 3. 构建词表
     from collections import Counter
     word_counts = Counter()
+
     for i in range(len(df)):
-        sentence = df.iloc[i]
-        sentence_review = sentence[review]
-        sentence_sentiment = sentence[sentiment]
-        tokens = sentence_review.lower().split()
+        review = df.iloc[i]['review']  # ✅ 修正：sentence[review] → sentence['review']
+        tokens = review.lower().split()
         word_counts.update(tokens)
+
     # 只保留出现>=min_freq次的词
     vocab = {"<PAD>": 0, "<UNK>": 1}
     for word, count in word_counts.items():
         if count >= min_freq:
             vocab[word] = len(vocab)
-    # 拆成 3 份:训练 70% / 验证 15% / 测试 15%
+
+    print(f"词表大小: {len(vocab)}")
+
+    # 4. 拆分数据集：训练 70% / 验证 15% / 测试 15%
     train, temp = train_test_split(df, test_size=0.3, random_state=42)
     val, test = train_test_split(temp, test_size=0.5, random_state=42)
-    return train[review],train[sentiment],val[review],val[sentiment], test[review],test[sentiment]
+
+    # 5. 提取文本和标签
+    train_texts = train['review'].tolist()  # ✅ 修正：train[review] → train['review']
+    train_labels = train['label'].tolist()
+
+    val_texts = val['review'].tolist()
+    val_labels = val['label'].tolist()
+
+    test_texts = test['review'].tolist()
+    test_labels = test['label'].tolist()
+
+    print(f"训练集: {len(train_texts)} 条")
+    print(f"验证集: {len(val_texts)} 条")
+    print(f"测试集: {len(test_texts)} 条")
+
+    return train_texts, train_labels, val_texts, val_labels, test_texts, test_labels, vocab
 
 
 # ==================== 第4步：训练函数 ====================
@@ -220,39 +253,58 @@ if __name__ == "__main__":
     print("PyTorch 情感分类模型训练 Demo")
     print("="*60)
 
-    # 1. 生成数据
-    X_train, y_train, X_val, y_val, X_test, y_test, vocab = load_data()
+    # 1. 加载数据（需要先下载 IMDB 数据集到本地）
+    data_path = "IMDB Dataset.csv"  # ✅ 修改为你的 CSV 文件路径
 
-    # 2. 创建 DataLoader
-    train_dataset = MovieDataset(X_train, y_train,vocab)
-    val_dataset = MovieDataset(X_val, y_val,vocab)
-    test_dataset = MovieDataset(X_test, y_test,vocab)
+    print("\n正在加载数据...")
+    train_texts, train_labels, val_texts, val_labels, test_texts, test_labels, vocab = load_data(data_path)
 
+    # 2. 创建 Dataset
+    train_dataset = MovieDataset(train_texts, train_labels, vocab, max_len=200)
+    val_dataset = MovieDataset(val_texts, val_labels, vocab, max_len=200)
+    test_dataset = MovieDataset(test_texts, test_labels, vocab, max_len=200)
+
+    # 3. 创建 DataLoader
+    print("\n创建 DataLoader...")
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=32)
     test_loader = DataLoader(test_dataset, batch_size=32)
 
-    # 3. 创建模型
-    model = myFirstModel(vocab_size=1000, embed_dim=64, hidden_dim=128, num_classes=2)
-    print(f"\n模型结构:")
+    # 4. 创建模型
+    print("\n创建模型...")
+    model = myFirstModel(
+        vocab_size=len(vocab),  # ✅ 使用实际词表大小
+        embed_dim=64,
+        hidden_dim=128,
+        num_classes=2
+    )
+    print(f"模型结构:")
     print(model)
 
     # 计算参数量
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\n总参数量: {total_params:,}")
 
-    # 4. 训练模型
-    model = train_model(model, train_loader, val_loader, num_epochs=10, lr=0.001)
+    # 5. 训练模型
+    model = train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001)
 
-    # 5. 测试模型
+    # 6. 测试模型
     evaluate_model(model, test_loader)
 
     print("\n训练完成！✅")
-    print("\n下一步可以尝试:")
-    print("  1. 修改 hidden_dim (如 256)")
-    print("  2. 修改 learning_rate (如 0.0001)")
-    print("  3. 修改 num_epochs (如 20)")
-    print("  4. 加载真实数据集")
+    print(model)
+
+    # 计算参数量
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"\n总参数量: {total_params:,}")
+
+    # 5. 训练模型
+    model = train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001)
+
+    # 6. 测试模型
+    evaluate_model(model, test_loader)
+
+    print("\n训练完成！✅")
 
 
 

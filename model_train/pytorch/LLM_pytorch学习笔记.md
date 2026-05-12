@@ -636,3 +636,31 @@ torch.nn
 **核心哲学：** `nn.Module` 把"参数管理、计算图构建、反向传播"都自动化了，你只需专注于**网络结构设计**和**前向传播逻辑**。
 
 ---
+
+# 5 DataSet
+在PyTorch中，数据加载可以通过自定义的数据集对象实现。数据集对象被抽象为Dataset类，实现自定义的数据集需要继承Dataset，并实现以下两个Python魔法方法。
+
+__getitem__()：返回一条数据，或一个样本。obj[index]等价于obj.__getitem__(index)。
+__len__()：返回样本的数量。len(obj)等价于obj.__len__()。
+
+
+# 6 DataLoader
+Dataset只负责数据的抽象，调用一次__getitem__返回一个样本。然而，在训练神经网络时，一次处理的对象是一个batch的数据，同时还需要对一批数据进行打乱顺序和并行加速等操作。考虑到这一点，PyTorch提供了DataLoader实现这些功能。
+
+DataLoader的定义如下：
+
+DataLoader(dataset, batch_size=1, shuffle=False, sampler=None, batch_sampler=None, num_workers=0, collate_fn=None, pin_memory=False, drop_last=False, timeout=0, worker_init_fn=None, multiprocessing_context=None, generator=None, *, prefetch_factor=2, persistent_workers=False)
+它主要有以下几个参数。
+
+dataset：加载的数据集（Dataset对象）。
+batch_size：一个batch的大小。
+shuffle：是否将数据打乱。
+sampler：样本抽样，后续会详细介绍。
+batch_sampler：与sampler类似，一次返回一个batch的索引（该参数与batch_size、shuffle、sampler和drop_last不兼容）。
+num_workers：使用多进程加载的进程数，0代表不使用多进程。
+collate_fn： 如何将多个样本数据拼接成一个batch，一般使用默认的拼接方式即可。
+pin_memory：是否将数据保存在pin memory区，pin memory中的数据转移到GPU速度更快。
+drop_last：dataset中的数据个数可能不是batch_size的整数倍，若drop_last为True，则将多出来不足一个batch的数据丢弃。
+timeout：进程读取数据的最大时间，若超时则丢弃数据。
+worker_init_fn：每个worker的初始化函数。
+prefetch_factor：每个worker预先加载的样本数。
