@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset
 import sklearn 
-from sklearn import train_test_split
+from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
 
@@ -254,15 +254,15 @@ if __name__ == "__main__":
     print("="*60)
 
     # 1. 加载数据（需要先下载 IMDB 数据集到本地）
-    data_path = "IMDB Dataset.csv"  # ✅ 修改为你的 CSV 文件路径
+    data_path = "/home/powerop/work/data/IMDB Dataset.csv"  # ✅ 修改为你的 CSV 文件路径
 
     print("\n正在加载数据...")
     train_texts, train_labels, val_texts, val_labels, test_texts, test_labels, vocab = load_data(data_path)
 
     # 2. 创建 Dataset
-    train_dataset = MovieDataset(train_texts, train_labels, vocab, max_len=200)
-    val_dataset = MovieDataset(val_texts, val_labels, vocab, max_len=200)
-    test_dataset = MovieDataset(test_texts, test_labels, vocab, max_len=200)
+    train_dataset = MovieDataset(train_texts, train_labels, vocab, max_len=512)
+    val_dataset = MovieDataset(val_texts, val_labels, vocab, max_len=512)
+    test_dataset = MovieDataset(test_texts, test_labels, vocab, max_len=512)
 
     # 3. 创建 DataLoader
     print("\n创建 DataLoader...")
@@ -274,8 +274,8 @@ if __name__ == "__main__":
     print("\n创建模型...")
     model = myFirstModel(
         vocab_size=len(vocab),  # ✅ 使用实际词表大小
-        embed_dim=64,
-        hidden_dim=128,
+        embed_dim=128,
+        hidden_dim=256,
         num_classes=2
     )
     print(f"模型结构:")
@@ -286,26 +286,12 @@ if __name__ == "__main__":
     print(f"\n总参数量: {total_params:,}")
 
     # 5. 训练模型
-    model = train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001)
+    model = train_model(model, train_loader, val_loader, num_epochs=50, lr=0.001)
 
     # 6. 测试模型
     evaluate_model(model, test_loader)
 
     print("\n训练完成！✅")
-    print(model)
-
-    # 计算参数量
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"\n总参数量: {total_params:,}")
-
-    # 5. 训练模型
-    model = train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001)
-
-    # 6. 测试模型
-    evaluate_model(model, test_loader)
-
-    print("\n训练完成！✅")
-
 
 
 

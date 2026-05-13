@@ -9,3 +9,4 @@
 | **nvidia-persistenced** | **后台守护进程**，通过持续持有 GPU 句柄让 GPU 保持在"已初始化"状态，避免进程退出后 GPU 反初始化带来的冷启动延迟（每次几秒）；同时保留 ECC 错误计数、时钟设置等运行时状态，是 AI 训练/推理、K8s GPU 节点等生产场景的标配 | ⭐ 推荐 |
 | **nvidia-fabric-manager** | 管理 **NVSwitch（NVLink 交换芯片）**的守护进程，负责多 GPU 全互联拓扑的初始化、路由配置、链路状态监控；**仅 DGX / HGX 等带 NVSwitch 的 8 卡互联系统需要**，单卡工作站（如 RTX PRO 5000）或普通 2-4 卡服务器装了反而会因找不到 NVSwitch 硬件而启动失败报错 | ⚠️ 仅 DGX/HGX 需要 |
 | **nvidia-container-toolkit** | 让**容器运行时（Docker / containerd / CRI-O）能够使用宿主机 GPU** 的桥接组件，核心作用是在容器启动时自动注入 GPU 设备节点（`/dev/nvidia*`）、驱动库（`libcuda.so` 等）和必要的环境变量；包含 `libnvidia-container`、`nvidia-ctk`、`nvidia-container-runtime` 等子组件，是 K8s 集群通过 Device Plugin 调度 GPU 的底层基础 | ⭐ K8s 场景必需 |
+
