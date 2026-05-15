@@ -10,3 +10,6 @@
 | **nvidia-fabric-manager** | 管理 **NVSwitch（NVLink 交换芯片）**的守护进程，负责多 GPU 全互联拓扑的初始化、路由配置、链路状态监控；**仅 DGX / HGX 等带 NVSwitch 的 8 卡互联系统需要**，单卡工作站（如 RTX PRO 5000）或普通 2-4 卡服务器装了反而会因找不到 NVSwitch 硬件而启动失败报错 | ⚠️ 仅 DGX/HGX 需要 |
 | **nvidia-container-toolkit** | 让**容器运行时（Docker / containerd / CRI-O）能够使用宿主机 GPU** 的桥接组件，核心作用是在容器启动时自动注入 GPU 设备节点（`/dev/nvidia*`）、驱动库（`libcuda.so` 等）和必要的环境变量；包含 `libnvidia-container`、`nvidia-ctk`、`nvidia-container-runtime` 等子组件，是 K8s 集群通过 Device Plugin 调度 GPU 的底层基础 | ⭐ K8s 场景必需 |
 
+
+# 驱动
+export LD_LIBRARY_PATH=/usr/local/cuda/compat:${LD_LIBRARY_PATH}

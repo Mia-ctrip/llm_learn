@@ -675,4 +675,13 @@ wrk -t 4 -c 100 -d 30s --latency \
 
 ---
 
-继续学习：《LLM_显存计算学习指南.md》
+
+# 案例积累
+
+## 智能客服
+智能客服用LLM代替传统的asr小模型时遇到的最大挑战是推理速度，要求首包在300ms中，团队做的工作：
+1. 选择精度更低的量化模型 从官方的 Qwen/Qwen3.6-35B-A3B-FP8 切换为  palmfuture/Qwen3.6-35B-A3B-GPTQ-Int4；
+2. 选择算力更高的模型 从H20切换为H200
+3. 选择优化更好的推理框架 从sgLang切换为vLLM 
+4. 使用Flash Attention (Flash Infer)
+经过这一轮调整，整句输出首包从800ms优化到300ms
