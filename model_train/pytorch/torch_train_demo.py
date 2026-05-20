@@ -2,15 +2,9 @@ import torch
 import pandas as pd
 import torch.nn as nn
 import torch.optim as optim
-<<<<<<< Updated upstream
-from torch.utils.data import Dataset
-import sklearn 
-from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader, TensorDataset
-=======
 from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split  # ✅ 修正：正确的导入路径
->>>>>>> Stashed changes
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt  # ✅ 添加画图库
 
 
 # ==================== 第1步：定义 LSTM 模块 ====================

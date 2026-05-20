@@ -336,9 +336,198 @@ GPU0 显存 → PCIe 总线 → 交换芯片 → GPU1 显存
 
 ---
 
-## 三、跨节点通讯：多服务器互联
+## 三、NUMA 与 GPU 亲和性
 
-### 3.1 传统网络通讯的瓶颈
+### 3.1 什么是 NUMA？
+
+**NUMA (Non-Uniform Memory Access)** = 非一致性内存访问
+
+**单 CPU 系统（UMA）**：
+```
+    ┌─────┐
+    │ CPU │
+    └──┬──┘
+       │ 内存总线
+    ┌──┴──┐
+    │ RAM │  ← 所有内存访问延迟一致
+    └─────┘
+```
+
+**多 CPU 系统（NUMA）**：
+```
+┌─────────────────────┬─────────────────────┐
+│   NUMA 节点 0       │   NUMA 节点 1       │
+│   ┌─────┐           │   ┌─────┐           │
+│   │CPU0 │           │   │CPU1 │           │
+│   └──┬──┘           │   └──┬──┘           │
+│      │              │      │              │
+│   ┌──┴──┐           │   ┌──┴──┐           │
+│   │RAM0 │           │   │RAM1 │           │
+│   └─────┘           │   └─────┘           │
+└─────────────────────┴─────────────────────┘
+         │                     │
+         └──── QPI/UPI ────────┘
+              (跨节点互联)
+```
+
+**关键特性：**
+- CPU0 访问 RAM0：**本地访问**，快（~100ns）
+- CPU0 访问 RAM1：**远程访问**，慢（~140ns，延迟增加 40%）
+- CPU 和内存成组，每组是一个 NUMA 节点
+
+---
+
+### 3.2 GPU 和 NUMA 的关系
+
+**典型双路服务器 + 4 卡 GPU**：
+```
+┌────────── NUMA 节点 0 ──────────┐  ┌────────── NUMA 节点 1 ──────────┐
+│  CPU0          RAM0            │  │  CPU1          RAM1            │
+│   │             │              │  │   │             │              │
+│   └── PCIe Root Complex 0      │  │   └── PCIe Root Complex 1      │
+│        │          │            │  │        │          │            │
+│      GPU0       GPU1           │  │      GPU2       GPU3           │
+└────────────────────────────────┘  └────────────────────────────────┘
+```
+
+**性能影响：**
+
+| 访问路径 | 延迟 | 带宽 | 影响 |
+|---------|------|------|------|
+| CPU0 → GPU0 | 低 | 满带宽 | ✅ 本地访问（推荐）|
+| CPU0 → GPU2 | 高 | 降低 30% | ⚠️ 跨 NUMA（性能下降）|
+| GPU0 → RAM0 | 低 | 满带宽 | ✅ 本地内存 |
+| GPU0 → RAM1 | 高 | 降低 30% | ⚠️ 跨 NUMA |
+
+**实测影响（数据加载）**：
+```bash
+# 正确绑定（本地 NUMA）
+numactl --cpunodebind=0 --membind=0 python train.py --gpu=0
+→ 数据加载：2.5 GB/s
+
+# 错误绑定（跨 NUMA）
+numactl --cpunodebind=1 --membind=1 python train.py --gpu=0
+→ 数据加载：1.7 GB/s（慢 32%）
+```
+
+---
+
+### 3.3 查看 NUMA 拓扑
+
+**查看 NUMA 节点数：**
+```bash
+numactl --hardware
+
+# 输出示例：
+available: 2 nodes (0-1)
+node 0 cpus: 0 1 2 3 4 5 6 7 8 9 10 11
+node 0 size: 128 GB
+node 1 cpus: 12 13 14 15 16 17 18 19 20 21 22 23
+node 1 size: 128 GB
+node distances:
+node   0   1
+  0:  10  21    ← 本地 10，远程 21（延迟比）
+  1:  21  10
+```
+
+**查看 GPU 的 NUMA 亲和性：**
+```bash
+nvidia-smi topo -m
+
+# 输出示例：
+        GPU0  GPU1  CPU Affinity  NUMA Affinity
+GPU0     X    NV4    0-11          0           ← GPU0 属于 NUMA 0
+GPU1    NV4    X     0-11          0
+GPU2    SYS   SYS   12-23          1           ← GPU2 属于 NUMA 1
+GPU3    SYS   SYS   12-23          1
+```
+
+**关键字段解释：**
+- **CPU Affinity**：推荐绑定的 CPU 核心范围
+- **NUMA Affinity**：GPU 所属的 NUMA 节点
+- **SYS**：跨 NUMA 访问（慢）
+
+---
+
+### 3.4 如何正确绑定 NUMA
+
+**方法 1：使用 numactl（命令行）**
+```bash
+# 绑定进程到 NUMA 0，使用 GPU0
+numactl --cpunodebind=0 --membind=0 python train.py --gpu=0
+
+# 绑定进程到 NUMA 1，使用 GPU2
+numactl --cpunodebind=1 --membind=1 python train.py --gpu=2
+```
+
+**方法 2：容器环境（Docker/K8s）**
+```yaml
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: training
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+    env:
+    - name: CUDA_VISIBLE_DEVICES
+      value: "0"
+  # Kubernetes Topology Manager 自动处理 NUMA 亲和性
+  topologySpreadConstraints:
+  - topologyKey: kubernetes.io/hostname
+```
+
+**方法 3：PyTorch DataLoader（自动绑定）**
+```python
+import torch
+
+# PyTorch 会自动将 DataLoader 的 worker 绑定到 GPU 的 NUMA 节点
+train_loader = torch.utils.data.DataLoader(
+    dataset,
+    batch_size=64,
+    num_workers=8,  # 自动绑定到 GPU 的 NUMA 节点
+    pin_memory=True
+)
+```
+
+---
+
+### 3.5 NUMA 优化建议
+
+**生产环境最佳实践：**
+
+1. **查看拓扑后再分配**
+   ```bash
+   nvidia-smi topo -m  # 先看 NUMA 分布
+   # 根据输出分配任务到对应 NUMA 节点
+   ```
+
+2. **避免跨 NUMA 访问**
+   - ❌ 错误：CPU0 控制 GPU2（跨 NUMA）
+   - ✅ 正确：CPU0 控制 GPU0/GPU1（本地 NUMA）
+
+3. **多进程训练时分组**
+   ```bash
+   # 4 卡训练，按 NUMA 分组
+   # 进程 0,1 在 NUMA 0
+   CUDA_VISIBLE_DEVICES=0,1 numactl --cpunodebind=0 --membind=0 python -m torch.distributed.launch --nproc_per_node=2 train.py &
+   
+   # 进程 2,3 在 NUMA 1
+   CUDA_VISIBLE_DEVICES=2,3 numactl --cpunodebind=1 --membind=1 python -m torch.distributed.launch --nproc_per_node=2 train.py &
+   ```
+
+4. **K8s 环境启用 Topology Manager**
+   ```yaml
+   # kubelet 配置
+   topologyManagerPolicy: single-numa-node  # 强制单 NUMA 分配
+   ```
+
+---
+
+## 四、跨节点通讯：多服务器互联
+
+### 4.1 传统网络通讯的瓶颈
 
 **问题**：GPU 和远程服务器上的 GPU 通讯，数据需要经过多次拷贝：
 
@@ -392,32 +581,235 @@ GPU 显存 ──直接──> 网卡 ──→ 网络
 
 ---
 
-### 3.3 网络技术选择
+### 4.3 NIC（网卡）与网络技术
 
-**主流技术对比**：
+#### 4.3.1 NIC 的作用
 
-| 技术 | 带宽 | 延迟 | CPU 占用 | 成本 | 适用场景 |
-|------|------|------|---------|------|---------|
-| **InfiniBand** | 200-400 Gb/s | <1 μs | 极低 | 高 | 大规模训练（首选）|
-| **RoCE v2** | 100-200 Gb/s | 2-5 μs | 低 | 中 | 预算有限的训练集群 |
-| **以太网 TCP/IP** | 10-100 Gb/s | 10-100 μs | 高 | 低 | 推理服务、小规模训练 |
+**NIC (Network Interface Card)** = 网卡，负责节点间的网络通讯。
 
-**InfiniBand 的优势**：
-- ✅ RDMA 原生支持（协议层内置）
-- ✅ 无损网络（拥塞控制好，丢包率接近零）
-- ✅ 低延迟（硬件卸载，<1 μs）
-- ✅ 生态成熟（NCCL、MPI 深度优化）
+**传统 NIC（以太网）**：
+```
+应用 → CPU 内存 → 网卡驱动 → NIC 硬件 → 网络
+         ↑ CPU 参与每次传输
+```
 
-**RoCE 的定位**：
-- ⚠️ RDMA over Converged Ethernet（在以太网上跑 RDMA）
-- ✅ 成本比 InfiniBand 低 30-50%
-- ⚠️ 需要无损以太网交换机（PFC、ECN）
-- ⚠️ 延迟略高，对网络配置要求高
+**RDMA NIC（InfiniBand/RoCE）**：
+```
+应用 → GPU 显存 → NIC 硬件 → 网络
+       ↑ 绕过 CPU，零拷贝
+```
 
-**以太网的场景**：
-- ✅ 推理服务（通讯量小，成本优先）
-- ✅ 小规模训练（<8 卡单节点）
-- ❌ 大规模训练（带宽和延迟不够）
+**GPU 训练集群的 NIC 配置：**
+```
+典型 8 卡训练节点：
+┌─────────────────────────┐
+│  8×GPU (H100/A100)      │
+│  ↓ PCIe/NVLink          │
+│  主板                    │
+│  ↓ PCIe                 │
+│  8×NIC (每 GPU 一个)     │  ← 每 GPU 配一个专用网卡
+└────────┬────────────────┘
+         │
+      交换机
+```
+
+**为什么每 GPU 配一个 NIC？**
+- 单 NIC 带宽不够（200 Gbps vs 8×GPU 需要 1600+ Gbps）
+- GPUDirect RDMA 性能最佳（GPU 直连网卡，避免竞争）
+- 降低单点故障风险
+
+---
+
+#### 4.3.2 InfiniBand 详解
+
+**架构特点：**
+```
+InfiniBand 完整栈：
+┌────────────────────────┐
+│  应用 (PyTorch/NCCL)   │
+├────────────────────────┤
+│  Verbs API (IB 接口)   │
+├────────────────────────┤
+│  IB 驱动 (OFED)        │  ← Mellanox OFED 驱动
+├────────────────────────┤
+│  IB HCA (Host Channel  │  ← InfiniBand 网卡
+│         Adapter)       │
+├────────────────────────┤
+│  IB 交换机              │
+└────────────────────────┘
+```
+
+**代际演进：**
+
+| 代际 | 速率 | 延迟 | 发布年份 | 典型产品 |
+|------|------|------|---------|---------|
+| FDR | 56 Gb/s | 0.7 μs | 2011 | ConnectX-3 |
+| EDR | 100 Gb/s | 0.5 μs | 2014 | ConnectX-4 |
+| HDR | 200 Gb/s | 0.6 μs | 2017 | ConnectX-6 |
+| NDR | 400 Gb/s | 0.65 μs | 2020 | ConnectX-7 |
+| XDR | 800 Gb/s | — | 2024+ | ConnectX-8 |
+
+**拓扑设计：**
+
+**Leaf-Spine 架构（标准设计）**：
+```
+        ┌──── Spine 交换机 ────┐
+        │   (核心层，高带宽)   │
+    ┌───┴───┬───────┬───────┬───┴───┐
+    │       │       │       │       │
+Leaf 1  Leaf 2  Leaf 3  Leaf 4  Leaf 5
+  │       │       │       │       │
+ 节点   节点    节点    节点    节点
+(8卡)  (8卡)  (8卡)  (8卡)  (8卡)
+
+- 每个节点连接到 1 个 Leaf 交换机
+- 每个 Leaf 上联所有 Spine
+- 任意两节点间：2 跳（Leaf → Spine → Leaf）
+```
+
+**DGX SuperPOD 拓扑**：
+```
+Fat-Tree 拓扑（3 层）：
+        Core (核心)
+          │
+        Aggregation (汇聚)
+          │
+        Access (接入)
+          │
+        计算节点
+
+- 单 SuperPOD：32 个 DGX 节点（256 × H100）
+- 总带宽：102.4 Tbps
+- 任意两 GPU 间：<2 μs 延迟
+```
+
+**InfiniBand 的优势：**
+- ✅ **RDMA 原生支持**（协议层内置，无需 CPU）
+- ✅ **无损网络**（硬件级流控，丢包率 <10⁻¹²）
+- ✅ **低延迟**（硬件卸载，<1 μs）
+- ✅ **生态成熟**（NCCL、MPI 深度优化）
+- ✅ **QoS 保证**（服务质量，优先级控制）
+
+**劣势：**
+- ❌ **成本高**（网卡 + 交换机贵 2-3 倍）
+- ❌ **专用设备**（不兼容以太网）
+- ❌ **厂商锁定**（主要是 NVIDIA/Mellanox）
+
+---
+
+#### 4.3.3 RoCE（RDMA over Converged Ethernet）
+
+**什么是 RoCE？**
+- 在**以太网**物理层上跑 **RDMA** 协议
+- 复用现有以太网基础设施
+- 成本比 InfiniBand 低 30-50%
+
+**RoCE 版本：**
+
+| 版本 | 协议栈 | 路由能力 | 适用场景 |
+|------|--------|---------|---------|
+| **RoCE v1** | Ethernet + IB | ❌ 二层（不可路由）| 小规模（同子网）|
+| **RoCE v2** | Ethernet + UDP + IB | ✅ 三层（可路由）| **生产推荐** |
+
+**RoCE v2 协议栈：**
+```
+┌────────────────────────┐
+│  应用 (PyTorch)        │
+├────────────────────────┤
+│  Verbs API             │
+├────────────────────────┤
+│  InfiniBand 传输层     │  ← RDMA 核心
+├────────────────────────┤
+│  UDP/IP                │  ← 封装在以太网内
+├────────────────────────┤
+│  Ethernet (物理层)     │
+└────────────────────────┘
+```
+
+**关键要求：无损以太网**
+
+RoCE 需要配置以太网交换机支持：
+
+1. **PFC (Priority Flow Control)**：
+   ```
+   作用：防止丢包
+   原理：接收端缓冲区满时发送 PAUSE 帧，暂停发送
+   配置：在交换机启用 PFC（通常优先级 3）
+   ```
+
+2. **ECN (Explicit Congestion Notification)**：
+   ```
+   作用：拥塞控制
+   原理：网络拥塞时标记数据包，发送端降速
+   配置：交换机和网卡同时启用 ECN
+   ```
+
+3. **DCQCN (Data Center Quantized Congestion Notification)**：
+   ```
+   作用：动态调整发送速率
+   原理：根据 ECN 反馈调整拥塞窗口
+   ```
+
+**交换机配置示例（Mellanox）**：
+```bash
+# 启用 PFC
+interface ethernet 1/1
+  dcb priority-flow-control mode on force
+  dcb priority-flow-control priority 3 enable
+
+# 启用 ECN
+  traffic-class 3
+    congestion-control ecn minimum-absolute 150 maximum-absolute 1500
+```
+
+**性能对比：**
+
+| 指标 | InfiniBand | RoCE v2 | TCP/IP 以太网 |
+|------|-----------|---------|-------------|
+| 带宽 | 200-400 Gbps | 100-200 Gbps | 10-100 Gbps |
+| 延迟 | <1 μs | 2-5 μs | 10-100 μs |
+| CPU 占用 | <1% | <5% | 30-60% |
+| 丢包率 | ~0 | <10⁻⁹ (配置正确) | 10⁻⁶ |
+| 成本 | 高 | 中 | 低 |
+| 配置复杂度 | 低 | 高（需要调优）| 低 |
+
+**RoCE 的适用场景：**
+- ✅ **预算有限的训练集群**（成本比 IB 低）
+- ✅ **已有以太网基础设施**（复用现有投资）
+- ✅ **中小规模训练**（16-64 卡）
+- ⚠️ **需要专业网络调优**（否则性能不稳定）
+
+**RoCE 的坑：**
+- ⚠️ 交换机必须支持无损以太网（不是所有以太网交换机都行）
+- ⚠️ 配置错误导致丢包 → 性能暴跌
+- ⚠️ 多租户环境隔离困难（不同任务争抢带宽）
+
+---
+
+#### 4.3.4 网络技术选择决策
+
+**决策矩阵：**
+
+| 场景 | 规模 | 推荐方案 | 原因 |
+|------|------|---------|------|
+| **推理服务** | 任意 | **TCP/IP 以太网** | 通讯量小，成本优先 |
+| **小规模训练** | <16 卡 | **RoCE v2** 或以太网 | 成本敏感，单节点为主 |
+| **中规模训练** | 16-128 卡 | **RoCE v2** | 性价比最优 |
+| **大规模训练** | 128+ 卡 | **InfiniBand** | 性能和稳定性必需 |
+| **超大规模训练** | 1000+ 卡 | **InfiniBand** | 唯一选择 |
+
+**成本对比（200 Gbps 网络）**：
+
+| 方案 | 网卡成本 | 交换机成本 | 总成本（8 节点）|
+|------|---------|-----------|---------------|
+| InfiniBand HDR | $1500/张 | $50000 | ~$110k |
+| RoCE 200G | $800/张 | $30000 | ~$70k |
+| 以太网 100G | $300/张 | $10000 | ~$30k |
+
+**性能/成本比：**
+- InfiniBand：1.0（基准）
+- RoCE：0.7 性能 / 0.6 成本 = **1.17**（性价比高）
+- 以太网：0.3 性能 / 0.3 成本 = 1.0
 
 ---
 
@@ -907,23 +1299,318 @@ make
 #     4194304       0.01   42.0GB/s   42.0GB/s    ← 实际带宽
 ```
 
-### 8.4 查看 PCIe P2P 是否启用
+### 8.4 nvidia-smi topo -m 详细解读
 
+**基础命令：**
 ```bash
-# 查看 GPU 间的 P2P 访问能力
 nvidia-smi topo -m
+```
+
+**完整输出示例（8 卡 DGX H100）：**
+```
+        GPU0  GPU1  GPU2  GPU3  GPU4  GPU5  GPU6  GPU7  mlx5_0 mlx5_1  CPU Affinity  NUMA Affinity
+GPU0     X    NV18  NV18  NV18  NV18  NV18  NV18  NV18   SYS    SYS      0-23         0
+GPU1    NV18   X    NV18  NV18  NV18  NV18  NV18  NV18   SYS    SYS      0-23         0
+GPU2    NV18  NV18   X    NV18  NV18  NV18  NV18  NV18   SYS    SYS      0-23         0
+GPU3    NV18  NV18  NV18   X    NV18  NV18  NV18  NV18   SYS    SYS      0-23         0
+GPU4    NV18  NV18  NV18  NV18   X    NV18  NV18  NV18   PHB    SYS     24-47         1
+GPU5    NV18  NV18  NV18  NV18  NV18   X    NV18  NV18   SYS    PHB     24-47         1
+GPU6    NV18  NV18  NV18  NV18  NV18  NV18   X    NV18   SYS    SYS     24-47         1
+GPU7    NV18  NV18  NV18  NV18  NV18  NV18  NV18   X     SYS    SYS     24-47         1
+mlx5_0  SYS   SYS   SYS   SYS   PHB   SYS   SYS   SYS     X      PIX
+mlx5_1  SYS   SYS   SYS   SYS   SYS   PHB   SYS   SYS    PIX     X
+
+Legend:
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+```
+
+---
+
+#### 8.4.1 符号详细解释
+
+**核心符号性能排序（从快到慢）：**
+
+| 符号 | 全称 | 含义 | 典型带宽 | 延迟 | 适用场景 |
+|------|------|------|---------|------|---------|
+| **X** | Self | 自己 | N/A | N/A | 自身 |
+| **NV#** | NVLink × # 条 | 通过 # 条 NVLink 直连 | 100-900 GB/s | 1-2 μs | **最快**，GPU 间高频通讯 |
+| **PIX** | PCIe Internal Exchange | 通过单个 PCIe 桥接芯片 | 32-64 GB/s | 3-5 μs | 同 PCIe 交换芯片下的设备 |
+| **PXB** | PCIe Cross Bridge | 通过多个 PCIe 桥接芯片 | 16-32 GB/s | 5-8 μs | 跨多个 PCIe 交换芯片 |
+| **PHB** | PCIe Host Bridge | 通过 PCIe 主桥（CPU） | 12-32 GB/s | 8-12 μs | 跨 PCIe root complex |
+| **NODE** | NUMA Node | 同 NUMA 节点，跨 PCIe 主桥 | 8-16 GB/s | 12-20 μs | 同 NUMA，不同 PCIe root |
+| **SYS** | System | 跨 NUMA 节点 + PCIe | 4-12 GB/s | 20-40 μs | **最慢**，跨 CPU socket |
+
+---
+
+#### 8.4.2 实际案例解析
+
+**案例 1：双路服务器 + 4×A100 PCIe**
+```
+        GPU0  GPU1  GPU2  GPU3  CPU Affinity  NUMA Affinity
+GPU0     X    NV4   PHB   SYS    0-23          0
+GPU1    NV4    X    SYS   PHB    0-23          0
+GPU2    PHB   SYS    X    NV4   24-47          1
+GPU3    SYS   PHB   NV4    X    24-47          1
+```
+
+**解读：**
+- **GPU0 ↔ GPU1**：`NV4` = 4 条 NVLink（100 GB/s）
+  - 属于同一 NUMA 节点 0
+  - 最快的通讯路径
+  
+- **GPU0 ↔ GPU2**：`PHB` = 通过 PCIe 主桥（CPU）
+  - 跨 PCIe root complex
+  - 带宽 ~16 GB/s
+  
+- **GPU0 ↔ GPU3**：`SYS` = 跨 NUMA 节点
+  - 需要通过 QPI/UPI 跨 CPU socket
+  - 带宽 ~8 GB/s，延迟最高
+
+**优化建议：**
+- ✅ 训练时配对：(GPU0+GPU1) 和 (GPU2+GPU3)
+- ✅ 绑定 NUMA：进程 0-1 用 GPU0-1（NUMA 0），进程 2-3 用 GPU2-3（NUMA 1）
+- ❌ 避免：GPU0 和 GPU3 频繁通讯（跨 NUMA，最慢）
+
+---
+
+**案例 2：8 卡 DGX H100（NVSwitch 全连接）**
+```
+        GPU0  GPU1  GPU2  GPU3  GPU4  GPU5  GPU6  GPU7
+GPU0     X    NV18  NV18  NV18  NV18  NV18  NV18  NV18
+GPU1    NV18   X    NV18  NV18  NV18  NV18  NV18  NV18
+...（所有都是 NV18）
+```
+
+**解读：**
+- **任意两个 GPU**：`NV18` = 18 条 NVLink（450 GB/s）
+- **NVSwitch 的作用**：实现全连接拓扑
+- **性能一致**：任意 GPU 对之间带宽相同
+
+**训练优势：**
+- ✅ 张量并行无瓶颈（任意切分都是全速）
+- ✅ 流水线并行灵活（不需要考虑拓扑）
+- ✅ 数据并行高效（AllReduce 均匀分布）
+
+---
+
+**案例 3：推理集群 4×L4（无 NVLink）**
+```
+        GPU0  GPU1  GPU2  GPU3  CPU Affinity  NUMA Affinity
+GPU0     X    PIX   PXB   PHB    0-63          0
+GPU1    PIX    X    PIX   PXB    0-63          0
+GPU2    PXB   PIX    X    PIX    0-63          0
+GPU3    PHB   PXB   PIX    X     0-63          0
+```
+
+**解读：**
+- **无 NVLink**：所有通讯走 PCIe
+- **GPU0 ↔ GPU1**：`PIX` = 同一个 PCIe 交换芯片（较快）
+- **GPU0 ↔ GPU3**：`PHB` = 跨 PCIe root（较慢）
+
+**推理场景：**
+- ✅ 每 GPU 处理独立请求（无通讯）
+- ✅ PCIe 带宽够用（只传输少量输入/输出）
+- ⚠️ 不适合需要频繁 GPU 间通讯的训练
+
+---
+
+#### 8.4.3 网卡（NIC）的拓扑
+
+**案例：8 卡 + 8 网卡（每 GPU 一个 IB 网卡）**
+```
+        GPU0  mlx5_0  mlx5_1  mlx5_2  ...
+GPU0     X     PHB     SYS     SYS    ...
+GPU1    NV18   SYS     PHB     SYS    ...
+GPU2    NV18   SYS     SYS     PHB    ...
+...
+
+mlx5_0: InfiniBand 网卡（Mellanox ConnectX-7）
+```
+
+**解读：**
+- **GPU0 ↔ mlx5_0**：`PHB` = 通过 PCIe 主桥
+  - GPU0 和 mlx5_0 在同一 PCIe root
+  - GPUDirect RDMA 性能最佳
+  
+- **GPU0 ↔ mlx5_1**：`SYS` = 跨 NUMA
+  - 网卡不在同一 NUMA，性能下降
+
+**最佳配置：**
+- ✅ 每 GPU 配对一个**本地 NUMA 的网卡**
+- ✅ 避免跨 NUMA 访问网卡
+- ✅ 8 卡 → 8 网卡（1:1 配置）
+
+---
+
+#### 8.4.4 查看更多拓扑信息
+
+**查看 P2P 读写能力：**
+```bash
+nvidia-smi topo -p2p r
+
+# 输出示例（读能力）：
+        GPU0  GPU1  GPU2  GPU3
+GPU0     -     OK    OK    NOK    ← GPU0 无法从 GPU3 读取
+GPU1    OK     -     NOK   OK
+GPU2    OK    NOK    -     OK
+GPU3    NOK   OK     OK    -
+
+NOK = P2P 不可用（通常因为跨 NUMA 或 IOMMU 限制）
+```
+
+**查看 P2P 写能力：**
+```bash
+nvidia-smi topo -p2p w
+
+# 写能力和读能力可能不同（取决于硬件支持）
+```
+
+**查看完整路径信息：**
+```bash
+nvidia-smi topo --matrix
+
+# 显示详细的 PCIe 路径和带宽
+```
+
+---
+
+#### 8.4.5 拓扑优化建议
+
+**训练任务分配原则：**
+
+1. **优先级 1：NVLink 连接**
+   ```
+   张量并行 → 必须用 NVLink 连接的 GPU
+   例如：GPU0-GPU3 有 NV18 → 4 卡张量并行
+   ```
+
+2. **优先级 2：同 NUMA 节点**
+   ```
+   数据并行 → 同 NUMA 节点的 GPU 组
+   例如：NUMA 0 有 GPU0-3 → 一组数据并行
+         NUMA 1 有 GPU4-7 → 另一组数据并行
+   ```
+
+3. **避免：跨 NUMA 频繁通讯**
+   ```
+   ❌ 错误：GPU0（NUMA 0）和 GPU7（NUMA 1）做张量并行
+   ✅ 正确：GPU0-3（NUMA 0）内部做张量并行
+   ```
+
+**K8s/SLURM 调度器配置：**
+```yaml
+# K8s Device Plugin 配置
+# 优先调度同 NUMA 节点的 GPU
+apiVersion: v1
+kind: Pod
+spec:
+  nodeSelector:
+    nvidia.com/gpu.topology: nvlink-enabled
+  resources:
+    limits:
+      nvidia.com/gpu: 4
+      nvidia.com/gpu-group: "0"  # 指定同一 NUMA/NVLink 组
+```
+
+---
+
+### 8.5 通讯层级和带宽系统对比
+
+**完整通讯层级表（从快到慢）：**
+
+| 层级 | 技术 | 典型带宽 | 延迟 | 使用场景 | 成本 |
+|------|------|---------|------|---------|------|
+| **GPU 内部** | HBM3e | 4800 GB/s | <100 ns | 显存访问 | 已含 |
+| **GPU 间（同节点）** | NVLink 5.0 | 900 GB/s | 1-2 μs | 张量并行 | $$ |
+| **GPU 间（同节点）** | NVLink 4.0 | 450 GB/s | 1-2 μs | 张量并行 | $$ |
+| **GPU 间（同节点）** | NVLink 3.0 | 300 GB/s | 1-2 μs | 张量并行 | $$ |
+| **GPU-CPU** | PCIe 5.0 x16 | 128 GB/s（双向）| 5-10 μs | 数据加载 | 已含 |
+| **GPU-CPU** | PCIe 4.0 x16 | 64 GB/s（双向）| 5-10 μs | 数据加载 | 已含 |
+| **GPU 间（无 NVLink）** | PCIe P2P (PIX) | 32-64 GB/s | 10-20 μs | 数据并行 | 已含 |
+| **GPU 间（跨 NUMA）** | PCIe P2P (SYS) | 8-16 GB/s | 30-50 μs | ❌ 避免 | 已含 |
+| **GPU-存储** | GPUDirect Storage | 50 GB/s | 10-20 μs | 数据加载 | $ |
+| **跨节点（最快）** | InfiniBand NDR | 50 GB/s（400 Gbps）| <2 μs | 大规模训练 | $$$$ |
+| **跨节点（中等）** | RoCE v2 200G | 25 GB/s（200 Gbps）| 5-10 μs | 中规模训练 | $$ |
+| **跨节点（基础）** | Ethernet 100G | 12.5 GB/s（100 Gbps）| 50-100 μs | 推理/小训练 | $ |
+
+**带宽可视化对比：**
+```
+GPU HBM3e        ████████████████████████████████████████████████  4800 GB/s
+NVLink 5.0       █████████                                          900 GB/s
+NVLink 4.0       █████                                              450 GB/s
+PCIe 5.0         ███                                                128 GB/s
+IB NDR           █                                                   50 GB/s
+PCIe 4.0         █                                                   64 GB/s
+PCIe P2P (good)  █                                                   32 GB/s
+RoCE 200G        █                                                   25 GB/s
+Ethernet 100G    █                                                   12 GB/s
+PCIe P2P (SYS)   ▌                                                    8 GB/s
+```
+
+**延迟可视化对比：**
+```
+GPU 内存访问    ▌                   <0.1 μs
+NVLink          ██                  1-2 μs
+InfiniBand      ██                  1-2 μs
+PCIe (local)    █████               5-10 μs
+RoCE            ██████              5-10 μs
+PCIe P2P (PIX)  ██████████          10-20 μs
+PCIe P2P (SYS)  ████████████████████ 30-50 μs
+Ethernet 100G   ██████████████████████████████  50-100 μs
+```
+
+---
+
+### 8.6 性能测试工具
+
+**带宽测试（GPU 间）：**
+```bash
+# CUDA 示例测试 P2P 带宽
+/usr/local/cuda/samples/bin/p2pBandwidthLatencyTest
 
 # 输出示例：
-#         GPU0  GPU1  CPU Affinity  NUMA Affinity
-# GPU0     X    NV4    0-23          0
-# GPU1    NV4    X     0-23          0
-#
-# Legend:
-#   X    = Self
-#   NV#  = NVLink (数字表示链路数)
-#   SYS  = PCIe + NUMA (需要跨 CPU socket，慢)
-#   NODE = PCIe (同一个 PCIe root，较快)
-#   PHB  = PCIe Host Bridge (跨 PCIe root，中等)
+Unidirectional P2P=Enabled Bandwidth Matrix (GB/s)
+   D\D     0      1      2      3
+     0  350.2   42.1   42.1   12.3   ← GPU0 到其他 GPU 的带宽
+     1   42.1  350.2   12.3   42.1
+     2   42.1   12.3  350.2   42.1
+     3   12.3   42.1   42.1  350.2
+```
+
+**延迟测试：**
+```bash
+# NCCL 延迟测试
+./nccl-tests/build/all_reduce_perf -b 8 -e 8 -f 1 -g 2
+
+# 输出包含延迟信息
+```
+
+**网络带宽测试（跨节点）：**
+```bash
+# iperf3 测试网络带宽
+# 节点 A（服务端）
+iperf3 -s
+
+# 节点 B（客户端）
+iperf3 -c <节点A IP> -t 30 -P 8
+
+# 输出：
+[SUM]  0.0-30.0 sec  88.2 GBytes  25.3 Gbits/sec  ← 实际带宽
+```
+
+**GPUDirect RDMA 测试：**
+```bash
+# perftest 套件（IB/RoCE）
+ib_write_bw -a -d mlx5_0 -x 0 <远程节点IP>
+
+# -x 0 启用 GPUDirect RDMA
+# 输出显示 GPU 到 GPU 的跨节点带宽
 ```
 
 ---
