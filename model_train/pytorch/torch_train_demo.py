@@ -154,6 +154,14 @@ def train_model(model, train_loader, val_loader, num_epochs=10, lr=0.001):
     print(f"\n开始训练，共 {num_epochs} 个 epoch...")
     print("=" * 60)
 
+    # ✅ 记录训练历史
+    history = {
+        'train_loss': [],
+        'train_acc': [],
+        'val_loss': [],
+        'val_acc': []
+    }
+
     best_val_acc = 0
 
     for epoch in range(num_epochs):
@@ -182,6 +190,7 @@ def train_model(model, train_loader, val_loader, num_epochs=10, lr=0.001):
             train_correct += (predicted == batch_y).sum().item()
 
         train_acc = train_correct / train_total
+        avg_train_loss = train_loss / len(train_loader)
 
         # ========== 验证阶段 ==========
         model.eval()
@@ -202,11 +211,18 @@ def train_model(model, train_loader, val_loader, num_epochs=10, lr=0.001):
                 val_correct += (predicted == batch_y).sum().item()
 
         val_acc = val_correct / val_total
+        avg_val_loss = val_loss / len(val_loader)
+
+        # ✅ 记录指标
+        history['train_loss'].append(avg_train_loss)
+        history['train_acc'].append(train_acc)
+        history['val_loss'].append(avg_val_loss)
+        history['val_acc'].append(val_acc)
 
         # 打印结果
         print(f"Epoch [{epoch+1}/{num_epochs}]")
-        print(f"  Train Loss: {train_loss/len(train_loader):.4f}, Train Acc: {train_acc*100:.2f}%")
-        print(f"  Val Loss:   {val_loss/len(val_loader):.4f}, Val Acc:   {val_acc*100:.2f}%")
+        print(f"  Train Loss: {avg_train_loss:.4f}, Train Acc: {train_acc*100:.2f}%")
+        print(f"  Val Loss:   {avg_val_loss:.4f}, Val Acc:   {val_acc*100:.2f}%")
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
@@ -214,7 +230,48 @@ def train_model(model, train_loader, val_loader, num_epochs=10, lr=0.001):
 
         print("-" * 60)
 
+    # ✅ 训练结束后画图
+    plot_training_history(history)
+
     return model
+
+
+# ✅ 新增：画图函数
+def plot_training_history(history):
+    """
+    画出训练历史曲线
+    """
+    epochs = range(1, len(history['train_loss']) + 1)
+
+    plt.figure(figsize=(12, 4))
+
+    # 子图1：损失曲线
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, history['train_loss'], 'b-', label='Train Loss')
+    plt.plot(epochs, history['val_loss'], 'r-', label='Val Loss')
+    plt.title('Loss over Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+
+    # 子图2：准确率曲线
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, [acc * 100 for acc in history['train_acc']], 'b-', label='Train Acc')
+    plt.plot(epochs, [acc * 100 for acc in history['val_acc']], 'r-', label='Val Acc')
+    plt.title('Accuracy over Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig('training_history.png', dpi=300)  # 保存图片
+    print(f"\n📊 训练曲线已保存到: training_history.png")
+    plt.show()  # 显示图片
+
+
+
 
 
 # ==================== 第5步：评估函数 ====================
