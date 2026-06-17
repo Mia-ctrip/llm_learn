@@ -9,4 +9,6 @@
 5. EP是什么（deepseek提出的）？DP是什么？
 6. PB分离的PB是什么？通过attention原理能理解吗？
 7. 专家数是什么？
+8. MoE架构范式是什么？
+9. open api的 TPM RPM分别是什么
 
