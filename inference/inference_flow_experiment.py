@@ -129,12 +129,77 @@ print(f"\n  KV Cache 总大小: {kv_cache_size / 1024 / 1024:.2f} MB")
 
 
 # ============================================================
+# 第 1.5 部分：深入观察 KV Cache 的内部结构
+# ============================================================
+
+print("\n" + "=" * 70)
+print("第 1.5 部分：深入观察 KV Cache 内部结构")
+print("=" * 70)
+
+# 1. KV Cache 的容器类型
+print(f"\n[1] KV Cache 容器类型:")
+print(f"  type: {type(past_key_values).__name__}")
+print(f"  → DynamicCache（新版 transformers ≥4.36）")
+print(f"  → 旧版返回的是 tuple of tuples: ((K₀,V₀), (K₁,V₁), ...)")
+
+# 2. 按层索引访问
+print(f"\n[2] 按层索引访问（共 {num_kv_layers} 层）:")
+for layer_idx in [0, 1, num_kv_layers - 1]:
+    k_layer, v_layer = kv_pairs[layer_idx]
+    print(f"  层 {layer_idx:>2}: K shape={k_layer.shape}, V shape={v_layer.shape}")
+print(f"  ... 省略中间层，结构完全相同")
+
+# 3. K/V tensor 的 4 维结构解析
+print(f"\n[3] K/V tensor 的 4 维结构解析:")
+k0 = kv_pairs[0][0]  # 第 0 层的 K tensor
+print(f"  K₀.shape = {k0.shape}")
+print(f"  拆解: (batch={k0.shape[0]}, num_heads={k0.shape[1]}, seq_len={k0.shape[2]}, d_k={k0.shape[3]})")
+print(f"  → {k0.shape[1]} 个头的 K 数据打包在一个 tensor 里，不是 12×12=144 组！")
+print(f"  → 每层只有 1 个 K tensor 和 1 个 V tensor，头信息嵌在第 2 维度")
+
+# 4. 访问单个头的 K/V
+print(f"\n[4] 访问第 0 层、第 0 个头的 K:")
+k0_head0 = k0[0, 0, :, :]  # (seq_len, d_k)
+print(f"  K[层0, 头0, :, :].shape = {k0_head0.shape}")
+print(f"  → ({input_ids.shape[1]} tokens, {k0.shape[3]} 维向量)")
+print(f"  → 这就是第 0 层、头 0 给所有 {input_ids.shape[1]} 个 token 计算的 K 向量")
+
+# 5. KV Cache 存储在哪个设备
+print(f"\n[5] KV Cache 存储设备:")
+print(f"  K₀.device = {k0.device}")
+model_device = next(model.parameters()).device
+print(f"  模型 device = {model_device}")
+print(f"  → KV Cache 和模型在同一个设备上（都是 {model_device}）")
+print(f"  → 模型在 CPU → KV Cache 在内存；模型在 GPU → KV Cache 在显存")
+
+# 6. 单头 K 的内容预览
+print(f"\n[6] 单头 K 内容预览（第 0 层、头 0、前 2 个 token、前 8 维）:")
+print(f"  token 0: {k0[0, 0, 0, :8].tolist()}")
+print(f"  token 1: {k0[0, 0, 1, :8].tolist()}")
+print(f"  → 每个 token 都有自己独立的 K 向量（64 维，这里只显示前 8 维）")
+
+# 7. KV Cache 的内存占用拆解
+print(f"\n[7] KV Cache 内存占用拆解:")
+batch, heads, seq_len, d_k = k0.shape
+dtype_bytes = k0.element_size()
+per_layer = 2 * batch * heads * seq_len * d_k * dtype_bytes  # × 2 因为 K 和 V
+print(f"  每层: 2(K+V) × {batch}(batch) × {heads}(heads) × {seq_len}(seq_len) × {d_k}(d_k) × {dtype_bytes}(bytes) = {per_layer/1024:.2f} KB")
+print(f"  共 {num_kv_layers} 层: {per_layer * num_kv_layers / 1024 / 1024:.2f} MB")
+print(f"  公式: 2 × batch × num_layers × num_heads × seq_len × d_k × bytes_per_element")
+
+
+# ============================================================
 # 第二部分：Decode 阶段 — 逐 token 生成
 # ============================================================
 
 print("\n" + "=" * 70)
 print("第二部分：Decode 阶段（逐 token 生成，每次只算 1 个新 token）")
 print("=" * 70)
+
+eos_id = tokenizer.eos_token_id
+max_new_tokens = 20  # 安全上限，演示用不需要太长
+print(f"\n停止条件：生成 <EOS>（id={eos_id}）或达到 max_new_tokens={max_new_tokens}")
+print(f"  ⚠ 实际部署中 max_new_tokens 可以设置很大（如 2048），这里为了演示简洁")
 
 # --- 方式 A：有 KV Cache（正确做法）---
 print("\n[方式 A] 有 KV Cache：每次只算 1 个新 token")
@@ -143,7 +208,8 @@ generated_ids = [next_token_id.item()]
 current_past = past_key_values  # 复用 Prefill 的 KV Cache
 
 total_decode_time_with_cache = 0
-for step in range(9):  # 再生成 9 个 token（加上 Prefill 预测的共 10 个）
+num_decode_steps = 0
+for step in range(max_new_tokens):
     new_input = torch.tensor([[generated_ids[-1]]])  # 只输入 1 个新 token！
     
     start = time.perf_counter()
@@ -156,10 +222,15 @@ for step in range(9):  # 再生成 9 个 token（加上 Prefill 预测的共 10 
     next_id = torch.argmax(logits, dim=-1).item()
     generated_ids.append(next_id)
     current_past = outputs.past_key_values
+    num_decode_steps += 1
     
     token_text = tokenizer.decode([next_id])
     full_text = tokenizer.decode(generated_ids)
     print(f"  Step {step+1}: \"{token_text}\" | 耗时 {decode_time*1000:.1f}ms | 序列: \"{full_text}\"")
+    
+    if next_id == eos_id:
+        print(f"  → 生成 <EOS>，停止！")
+        break
 
 # KV Cache 增长后的大小
 kv_pairs_final = extract_kv_list(current_past)
@@ -169,7 +240,8 @@ kv_cache_final = sum(
 )
 
 print(f"\n  Decode 总耗时 (有 KV Cache): {total_decode_time_with_cache*1000:.1f} ms")
-print(f"  平均每个 token: {total_decode_time_with_cache/9*1000:.1f} ms")
+print(f"  生成 token 数: {num_decode_steps}")
+print(f"  平均每个 token: {total_decode_time_with_cache/num_decode_steps*1000:.1f} ms")
 print(f"  KV Cache 最终大小: {kv_cache_final / 1024 / 1024:.2f} MB")
 
 
@@ -178,8 +250,9 @@ print("\n[方式 B] 无 KV Cache：每次都重新算所有 token")
 
 generated_ids_no_cache = [next_token_id.item()]
 total_decode_time_no_cache = 0
+num_decode_steps_no_cache = 0
 
-for step in range(9):
+for step in range(max_new_tokens):
     # 把 prompt + 已生成的所有 token 一起输入（没有 KV Cache，全部重算）
     full_input = torch.cat([input_ids, torch.tensor([generated_ids_no_cache])], dim=1)
     
@@ -192,12 +265,18 @@ for step in range(9):
     logits = outputs.logits[:, -1, :]
     next_id = torch.argmax(logits, dim=-1).item()
     generated_ids_no_cache.append(next_id)
+    num_decode_steps_no_cache += 1
     
     token_text = tokenizer.decode([next_id])
     print(f"  Step {step+1}: \"{token_text}\" | 耗时 {decode_time*1000:.1f}ms | 输入 {full_input.shape[1]} tokens")
+    
+    if next_id == eos_id:
+        print(f"  → 生成 <EOS>，停止！")
+        break
 
 print(f"\n  Decode 总耗时 (无 KV Cache): {total_decode_time_no_cache*1000:.1f} ms")
-print(f"  平均每个 token: {total_decode_time_no_cache/9*1000:.1f} ms")
+print(f"  生成 token 数: {num_decode_steps_no_cache}")
+print(f"  平均每个 token: {total_decode_time_no_cache/num_decode_steps_no_cache*1000:.1f} ms")
 
 
 # ============================================================
@@ -214,20 +293,21 @@ print(f"""
 │                     │   有 KV Cache     │   无 KV Cache     │
 ├─────────────────────┼──────────────────┼──────────────────┤
 │ Decode 总耗时        │ {total_decode_time_with_cache*1000:>8.1f} ms      │ {total_decode_time_no_cache*1000:>8.1f} ms      │
-│ 平均每个 token       │ {total_decode_time_with_cache/9*1000:>8.1f} ms      │ {total_decode_time_no_cache/9*1000:>8.1f} ms      │
-│ 加速比              │                  │                  │
+│ 生成 token 数        │ {num_decode_steps:>8}          │ {num_decode_steps_no_cache:>8}          │
+│ 平均每个 token       │ {total_decode_time_with_cache/num_decode_steps*1000:>8.1f} ms      │ {total_decode_time_no_cache/num_decode_steps_no_cache*1000:>8.1f} ms      │
+│ 加速比              │ {speedup:>8.1f}x         │                  │
 └─────────────────────┴──────────────────┴──────────────────┘
 
 有 KV Cache 比无 KV Cache 快 {speedup:.1f} 倍！
 
 总推理时间:
   Prefill:  {prefill_time*1000:.1f} ms（一次性处理 {input_ids.shape[1]} 个输入 token）
-  Decode:   {total_decode_time_with_cache*1000:.1f} ms（逐 token 生成 10 个 token）
+  Decode:   {total_decode_time_with_cache*1000:.1f} ms（逐 token 生成 {num_decode_steps} 个 token）
   总计:     {(prefill_time + total_decode_time_with_cache)*1000:.1f} ms
 
 对应你学过的指标:
   TTFT (首 token 延迟) ≈ Prefill 时间 = {prefill_time*1000:.1f} ms
-  TPOT (每个 token 耗时) ≈ Decode 平均时间 = {total_decode_time_with_cache/9*1000:.1f} ms/token
+  TPOT (每个 token 耗时) ≈ Decode 平均时间 = {total_decode_time_with_cache/num_decode_steps*1000:.1f} ms/token
 """)
 
 

@@ -152,30 +152,75 @@ KV Cache (GB) ≈ seq_len × batch_size × 2 / 1000
 - 4个batch，2K tokens，7B模型 → KV Cache ≈ 3.2 GB
 ```
 
-### 3.3 运行时显存（Runtime Memory）
+### 3.3 运行时显存（Runtime Memory / 激活值）
 
-临时显存，用于计算中间结果，包括：
-- 注意力权重计算
-- MLP 激活值
-- 梯度（仅训练）
+临时显存，用于存储计算中间结果。推理时不需要梯度，激活值比训练时少很多。
 
-**估算**：运行时显存 ≈ 模型权重的 10-20%
+#### 快速估算
 
-**例子**：
-- Qwen2.5-7B (FP16) 权重 = 14GB
-- 运行时显存 ≈ 1.4GB - 2.8GB
+```
+运行时显存 ≈ 模型权重的 10-20%
+```
+
+#### 详细分析：Prefill vs Decode 的激活值
+
+运行时激活值在两个阶段差异很大，**取峰值**：
+
+```
+Prefill 阶段（激活值最大）：
+  主要消耗：
+  ① Attention 分数矩阵: batch × heads × seq_len² × bytes
+    例 (seq_len=2048, 32头, FP16): 32 × 2048² × 2 ≈ 256 MB
+  ② LM Head logits:      batch × seq_len × vocab_size × bytes
+    例 (seq_len=2048, vocab=152064, FP16): 2048 × 152064 × 2 ≈ 593 MB ← 往往是最大的！
+  ③ FFN 中间激活:        batch × seq_len × 4×hidden_dim × bytes
+    例: 2048 × 3584 × 4 × 2 ≈ 56 MB
+
+Decode 阶段（激活值很小）：
+  每次只处理 1 个 token，所有激活都很小：
+  ① Q 向量:      (batch, 1, hidden_dim) ≈ 7 KB
+  ② logits:      (batch, 1, vocab_size) ≈ 300 KB
+  ③ FFN 中间值:  (batch, 1, 4×hidden_dim) ≈ 28 KB
+  → 相比 KV Cache 可以忽略
+```
+
+#### 激活值峰值的简化计算
+
+```
+Prefill 激活峰值 ≈ max(attention分数矩阵, logits, FFN激活)
+                ≈ batch × seq_len × max(heads × seq_len, vocab_size) × bytes
+
+当 vocab_size > heads × seq_len 时，logits 是激活值的大头
+当 heads × seq_len > vocab_size 时，attention 分数矩阵是大头
+
+实际部署中：Prefill 激活是临时的（算完即释放），不持续占用显存
+           真正持续累积的是 KV Cache，才是长期显存压力
+```
+
+#### 常见误区
+
+```
+❌ 误解：运行时激活值主要来自 input_embedding 或单个 token 的 logits
+✅ 正确：Prefill 时最大的是 LM Head 输出 (seq_len × vocab_size)
+         和 attention 分数矩阵 (heads × seq_len²)
+         Decode 时激活值很小，KV Cache 才是显存主力
+```
 
 ---
 
 ## 4. 推理显存总计公式
 
 ```
-总显存 (GB) = 权重显存 + KV_Cache + 运行时显存
+总显存 (GB) = 权重显存 + KV_Cache + 运行时显存(峰值)
 
 详细版本：
 总显存 = (参数量 × 精度字节数) 
        + (2 × batch × seq_len × hidden_dim × layers × 精度字节数 / 1B)
-       + (权重显存 × 10-20%)
+       + max(Prefill激活峰值, Decode激活峰值)
+
+生产环境简化估算：
+总显存 ≈ 权重显存 + KV_Cache(max_output_len) + ~10% 余量
+因为：Prefill 激活是临时的，Decode 激活很小，KV Cache 才是长期压力
 ```
 
 ### 4.1 实例计算：Qwen2.5-7B FP16

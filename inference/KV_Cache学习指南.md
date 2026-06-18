@@ -166,6 +166,79 @@ class LLMWithKVCache:
         return generated_tokens
 ```
 
+### KV Cache 的实际数据结构（深入）
+
+#### 容器类型
+
+```python
+# 新版 transformers (≥4.36)：DynamicCache 对象
+past_key_values = outputs.past_key_values  # DynamicCache 实例
+
+# 旧版 transformers：tuple of tuples
+past_key_values = ((K₀, V₀), (K₁, V₁), ..., (K₁₁, V₁₁))
+
+# 访问方式统一：按层索引
+past_key_values[0]  → (K₀, V₀)  # 第 0 层
+past_key_values[1]  → (K₁, V₁)  # 第 1 层
+```
+
+#### K/V tensor 的 4 维形状
+
+```
+每层 K shape: (batch, num_heads, seq_len, d_k)
+              = (1,    12,        10,      64)  # GPT-2 Small 示例
+
+重要认知：
+  12 个头的 K 数据打包在一个 tensor 里，不是 12×12=144 组！
+  每层只有 1 个 K tensor 和 1 个 V tensor，头信息嵌在第 2 维度
+
+访问单个头：
+  K[层0, 头0, :, :] → (seq_len, d_k) = (10, 64)
+  → 这就是第 0 层、头 0 给所有 10 个 token 计算的 K 向量
+```
+
+#### KV Cache 是追加（append），不是求和（sum）
+
+```
+❌ 误解：sum += new_token_kv  → 所有 token 的 K/V 加起来变成一个向量
+✅ 正确：cache.append(new_kv) → 每个 token 的 K/V 独立保存，seq_len 维度不断增长
+
+如果"加起来"，10 个 token 的 K 向量就变成了 1 个向量，每个 token 的个体信息全部丢失了。
+但 Attention 计算时需要和每个 token 的 K 单独做点积，所以必须独立保存。
+
+类比：KV Cache 像一个笔记本，每页存一个 token 的 K/V，Decode 每次新增一页。
+```
+
+#### Decode 阶段 KV Cache 的动态增长
+
+```
+Prefill 结束后：
+  K shape: (batch, heads, seq_len=10, d_k)  ← 10 个 token
+
+Decode Step 1: 新 token → K_new 追加 → (batch, heads, seq_len=11, d_k)
+Decode Step 2: 新 token → K_new 追加 → (batch, heads, seq_len=12, d_k)
+...
+Decode Step N: 新 token → K_new 追加 → (batch, heads, seq_len=10+N, d_k)
+
+→ seq_len 这个维度在不断增长，其他维度都不变
+→ 最终大小 = 2 × batch × num_layers × num_heads × (seq_len + output_len) × d_k × bytes
+```
+
+#### KV Cache 存储在哪个设备
+
+```
+KV Cache 是 torch tensor，和模型在同一个设备上：
+  模型在 CPU → KV Cache 在内存（RAM）
+  模型在 GPU → KV Cache 在显存（VRAM）
+
+检查方式：past_key_values[0][0].device
+
+这正是 KV Cache 成为大模型推理瓶颈的核心原因：
+  长序列时 KV Cache 会占用大量显存，甚至超出显存容量
+  → 这就是为什么有 PagedAttention (vLLM) 等显存管理技术
+```
+
+
 ---
 
 ## 📊 有无 KV Cache 的对比
