@@ -1,6 +1,7 @@
 # Attention & Transformer 学习笔记
 
 > 基于 Jay Alammar "Illustrated Transformer" 精读 + Q&A 整理
+https://jalammar.github.io/illustrated-transformer/
 > 学习日期：2026-06-04 ~ 06-05
 
 ---
@@ -254,9 +255,9 @@ K 要转置：矩阵乘法规则（A的行 × B的列），转置后 K 的列 = 
 
 ```
 输入 embedding: 512 维
-W_Q, W_K, W_V: 512 × 64（降维，省计算量）
-q, k, v: 64 维
-Multi-Head 8 × 64 = 512 维，信息量还原
+W_Q, W_K, W_V: 512 × 512（即 d_model × d_model）
+Multi-Head 8 头: 每个头的 d_k = d_model / 8 = 64
+详见第四章 4.5 节（实现机制详解）
 ```
 
 ---
@@ -291,6 +292,163 @@ Concat(Z₁,...,Z₈) → (N×512)
 
 - 一个 Head = 一整套独立计算单元（W_Q/W_K/W_V + 计算过程 + 输出 Z）
 - 参数：8 × 3 × 512 × 64 + 512 × 512 ≈ **105 万**
+
+### 4.5 实现视角：多头注意力的真实计算方式（重点）
+
+4.1-4.2 节是**概念视角**（每个头有独立的 W），本节是**工程实现视角**（实际代码怎么算的）。
+
+#### 核心认知：3 个大矩阵，不是 num_heads 组小矩阵
+
+```
+❌ 误解：每个头有独立的 W_Q¹(512×64), W_K¹(512×64), W_V¹(512×64)...
+✅ 实际：只有 3 个大矩阵 W_Q, W_K, W_V，每个都是 (d_model, d_model) = (512, 512)
+         通过 reshape 切分成 8 个头
+```
+
+#### 真实计算过程（4 步）
+
+```
+Step 1: 3 次大矩阵乘法（不是 8×3=24 次小矩阵乘法）
+
+  输入 X: (seq_len, 512)
+  W_Q: (512, 512)    ← 一个完整的矩阵
+  W_K: (512, 512)
+  W_V: (512, 512)
+
+  Q_full = X @ W_Q   → (seq_len, 512)   一次矩阵乘法
+  K_full = X @ W_K   → (seq_len, 512)
+  V_full = X @ W_V   → (seq_len, 512)
+
+Step 2: Reshape 分头 — 这就是"多头"的来源
+
+  Q_full: (seq_len, 512)
+      → reshape → (seq_len, 8, 64)
+      → transpose → (8, seq_len, 64)
+                     ↑
+                  8个头，每头拿到 64 维的 Q
+
+  K_full, V_full 同理
+
+  ⚡ 本质：W_Q 的前 64 列给了头1，接下来 64 列给了头2...
+     每个头拿到的是不同的权重列 → 算出不同的 Q → 关注不同的方面
+
+Step 3: 每个头独立做 Attention（和单头完全一样）
+
+  头 1: Attention(Q₁, K₁, V₁) → (seq_len, 64)
+  头 2: Attention(Q₂, K₂, V₂) → (seq_len, 64)
+  ...
+  头 8: Attention(Q₈, K₈, V₈) → (seq_len, 64)
+
+  拼接: (seq_len, 64) × 8 → reshape → (seq_len, 512)
+
+Step 4: W_O 投影 — 信息融合层
+
+  拼接结果: (seq_len, 512)
+      ↓ @ W_O (512, 512)
+  输出: (seq_len, 512)
+```
+
+#### 实现 vs 数学等价
+
+```python
+# 实际实现（1次大矩阵乘法 + reshape）：
+Q = X @ W_Q                    # (seq_len, 512)
+Q = Q.reshape(seq_len, 8, 64)  # 分头
+
+# 数学上完全等价于（8次小矩阵乘法）：
+Q1 = X @ W_Q[:, :64]           # 头1用前64列
+Q2 = X @ W_Q[:, 64:128]        # 头2用接下来64列
+...
+Q8 = X @ W_Q[:, 448:512]       # 头8用最后64列
+```
+
+工程上用大矩阵方式实现，因为**一次大矩阵乘法比多次小矩阵乘法快得多**（GPU 擅长大规模并行计算）。
+
+#### W_Q/W_K/W_V 的维度（纠正易混淆点）
+
+| 矩阵 | 维度 | 说明 |
+|------|------|------|
+| W_Q | (d_model, d_model) = (512, 512) | 不是 (d_model, d_k) |
+| W_K | (d_model, d_model) = (512, 512) | 同上 |
+| W_V | (d_model, d_model) = (512, 512) | 同上 |
+| W_O | (d_model, d_model) = (512, 512) | 输出投影矩阵 |
+| 每个头的 Q/K/V | (seq_len, d_k) = (seq_len, 64) | 切分后的中间结果 |
+
+#### W_O 的真正作用（纠正误解）
+
+```
+❌ 误解：W_O 使得不同头关注不同的 aspect
+✅ 正确：不同头关注不同 aspect 的能力来自 W_Q/W_K/W_V 被切分后，
+         每个头拿到的权重列不同（训练时各自学到了不同的值）
+
+W_O 的作用：把 8 个头的输出融合起来，投影回 d_model 维度
+            是"信息混合层"，不是"注意力分配器"
+
+                    W_Q (512 × 512)
+                    ┌───┬───┬───┬───┐
+                    │ 64│ 64│...│ 64│  ← 按列切成 8 份
+                    └─┬─┴─┬─┴───┴─┬─┘
+                      │   │       │
+                     头1  头2    头8   ← 每头用不同的权重列
+                      │   │       │       → 自然关注不同 aspect
+                     Q₁  Q₂     Q₈
+
+                     ↓    ↓       ↓
+                  Attn  Attn   Attn    ← 每头独立做 attention
+                     ↓    ↓       ↓
+                    Z₁   Z₂     Z₈    ← 每头输出 (seq_len, 64)
+                     ↓    ↓       ↓
+              Concat → (seq_len, 512)
+                     ↓
+                  × W_O               ← 信息融合（不是分配注意力）
+                     ↓
+              最终输出 (seq_len, 512)
+```
+
+#### 单层 MHSA 参数量（以 d_model=512, num_heads=8 为例）
+
+```
+W_Q: 512 × 512 = 262,144
+W_K: 512 × 512 = 262,144
+W_V: 512 × 512 = 262,144
+W_O: 512 × 512 = 262,144
+bias: 4 × 512 = 2,048
+─────────────────────────
+MHSA 小计 ≈ 105 万
+
+FFN（中间维度 = 4 × d_model = 2048）:
+W₁: 512 × 2048 = 1,048,576
+W₂: 2048 × 512 = 1,048,576
+bias ≈ 2,560
+─────────────────────────
+FFN 小计 ≈ 210 万  ← 注意力的 2 倍！
+
+单层总参数 ≈ 315 万（MHSA 占 1/3，FFN 占 2/3）
+```
+
+### 4.6 多层模型总参数量分布（以 GPT-2 Small 为例）
+
+```
+GPT-2 Small: d_model=768, num_heads=12, num_layers=12, vocab_size=50257
+
+┌─────────────────────────────────────────────────────────┐
+│ Embedding 层: 50257 × 768 ≈ 38.6M                      │
+├─────────────────────────────────────────────────────────┤
+│ 12 层 Decoder Block:                                     │
+│   每层 MHSA: 4 × (768×768) + bias ≈ 2.36M              │
+│   每层 FFN:  2 × (768×3072) + bias ≈ 4.72M             │
+│   12 层小计: 12 × (2.36M + 4.72M) ≈ 84.9M             │
+├─────────────────────────────────────────────────────────┤
+│ LM Head (输出 Linear): 与 Embedding 共享权重，不额外计数  │
+├─────────────────────────────────────────────────────────┤
+│ 总计 ≈ 117M                                              │
+└─────────────────────────────────────────────────────────┘
+
+关键发现：
+  FFN 参数量 ≈ MHSA 的 2 倍（因为中间维度是 4×d_model）
+  Embedding 占比约 1/3
+  num_layers 只数 Decoder Block，不含 Embedding 和 LM Head
+```
 
 ---
 
@@ -420,23 +578,113 @@ GPT 只有 Masked Self-Attention + FFN：
 - 翻译：输入（法语）≠ 输出（英语）→ 需要 Cross-Attention 连接两个序列
 - GPT：前面的词 = 已生成的输出 → 一个序列就够
 
-### 6.6 Linear + Softmax 输出层
+### 6.6 Linear + Softmax 输出层（LM Head 详解）
+
+#### LM Head 的本质
+
+LM Head（Language Model Head）= 一个 Linear 层 = `nn.Linear(d_model, vocab_size, bias=False)`，没有激活函数，就是一次矩阵乘法。
 
 ```
-Decoder 最终输出 Z (N×512)
-  ↓ 训练时：每行都算，推理时：只取最后一行
-z (512维)
-  ↓ Linear层 (512 → vocab_size，如50000)  ← 升维！不是降维
-logits (50000维)  ← 每个位置对应词表里一个词的得分
-  ↓ Softmax
-概率 (50000维)   ← 所有值 0~1，加起来=1
-  ↓ argmax（取最大值）
-"student" → 查词表得到输出
+第 12 层 Decoder 输出: (seq_len, d_model) = (10, 768)
+        │
+        ↓ LM Head = Linear 层: W_lm (768, 50257)  ← vocab_size=50257
+        │  就是一次矩阵乘法: (10, 768) @ (768, 50257) = (10, 50257)
+        │
+logits: (10, 50257)  ← 每个位置对 50257 个词的原始分数（可正可负，无范围）
+        │
+        ↓ Softmax（不改变维度！只是数值归一化）
+        │
+probs:  (10, 50257)  ← 每个位置的概率分布（0~1，和=1）
+        │
+        ↓ argmax（取概率最大的词）
+        │
+输出:   每个位置 1 个 token
 ```
 
-- Linear 层是**升维**（512→50000），让每个位置对应词表里每个词的得分
-- 对比传统分类：Linear 是降维（特征→2~3个类别）。本质一样：把"理解"映射到"选项得分"
-- 输出长度不固定：模型自己决定什么时候输出 `<EOS>`（结束符），训练时学会了这个能力
+**Logits = 未经 Softmax 的原始分数**，是 Linear 层的直接输出。分数越高 → Softmax 后概率越大 → 越可能被选中。
+
+#### 输入和输出访问词表的方式不同
+
+```
+输入（Embedding 查表）：
+  Token IDs [464, 1820, 3877, ...]  ← 整数索引
+  每个 ID 作为 Index，从 E(vocab_size×d_model) 中"捷"对应行
+  不是矩阵乘法，是查表操作
+  结果: (seq_len, d_model) = (10, 768)
+
+输出（LM Head 矩阵乘法）：
+  (10, 768) @ (768, 50257) = (10, 50257)
+  是真正的矩阵乘法
+  结果: 每个位置对词表中每个词的得分
+```
+
+#### Weight Tying（权重共享）
+
+```
+GPT-2 的 LM Head 权重和 Embedding 矩阵是同一个矩阵：
+
+  Embedding 查表: 输入 ID → 取 E 的第 ID 行 → (d_model,)
+  LM Head 打分:   (10, d_model) @ E^T → (10, vocab_size)
+
+  E: (vocab_size, d_model) = (50257, 768)  ← 同一个矩阵，两个用途
+
+→ 省掉了一整份参数（约 38.6M）！
+→ 这也是为什么 4.6 节里 LM Head "不额外计数"
+```
+
+#### 推理时为什么只取最后一行 logits？
+
+```
+10 个位置各自有一个 (1, 50257) 的概率分布，各自预测"我的下一个词是谁"：
+
+  位置 1 ("The"):   预测下一个词 → "quick"（概率最高）  ← 我们不关心
+  位置 2 ("quick"):  预测下一个词 → "brown"（概率最高） ← 我们不关心
+  ...
+  位置 10 ("then"):  预测下一个词 → "jumps"（概率最高） ← 只取这个！
+
+为什么前 9 个位置不用？
+  输入是我们自己写的 prompt，不需要模型告诉我们 "The" 后面是 "quick"
+  我们唯一想知道的是：看完整个 prompt 之后，下一个词该是什么
+
+代码：next_token_logits = logits[:, -1, :]  ← 只取最后一行
+
+⚠ 但这 10 个位置的预测在训练时全都用！
+  每个位置都和正确答案算 Loss（Teacher Forcing）
+```
+
+#### 推理输出不是 10 个词，而是 1 个词
+
+```
+❌ 误解：Prefill 输入 10 个 token → 输出 10 个词
+✅ 正确：Prefill 输入 10 个 token → 只输出 1 个词（下一个词）
+          之后由 Decode 阶段逐词追加，拼成完整回复
+
+模型每次只能预测"下一个词"，没有能力一次输出多个词
+ChatGPT "流式输出"一个字一个字蹦出来，就是因为底层在一步步 Decode
+```
+
+#### 完整输出维度链路（推理视角）
+
+```
+Token IDs: (1, 10)           ← 输入是整数索引，不是向量
+    ↓ Embedding 查表
+(10, 768)
+    ↓ 12 层 Decoder Block（MHSA + FFN + 残差 + LayerNorm）
+    │ 每层 W_O: (768, 768)，保证输入输出维度一致（残差连接需要）
+(10, 768)
+    ↓ LM Head = Linear (768, 50257)
+(10, 50257) = logits
+    ↓ Softmax（维度不变）
+(10, 50257) = probs
+    ↓ 取 logits[:, -1, :] 再 argmax
+1 个 token（Prefill 的唯一输出）
+    ↓ Decode 阶段逐词追加
+完整回复
+
+停止条件（满足任一即停）：
+  1. 模型生成了 <EOS> token（模型自己学会的"结束信号"）
+  2. 达到 max_length / max_new_tokens 上限（防止无限生成）
+```
 
 ### 6.7 Decoder 完整工作流程
 
@@ -627,7 +875,7 @@ Loss = 每个位置上 -log(模型给正确答案的概率) 的平均值
 | 每层 W_Q, W_K, W_V, W_O | Multi-Head Attention 参数 |
 | 每层 FFN W₁, W₂, b₁, b₂ | 两层全连接 |
 | 每层 LayerNorm γ, β | 归一化缩放和平移 |
-| 最终 Linear 层 | 512 → vocab_size |
+| 最终 LM Head (Linear 层) | d_model → vocab_size，与 Embedding 共享权重 (GPT-2) |
 
 ### 8.4 反向传播与残差连接
 
@@ -656,10 +904,10 @@ Loss = 每个位置上 -log(模型给正确答案的概率) 的平均值
 - [x] Transformer 架构 & 三种变体
 - [x] Embedding + Positional Encoding
 - [x] Self-Attention（逐词 + 矩阵 + Q/K/V 本质）
-- [x] Multi-Head Attention
+- [x] Multi-Head Attention（概念 + 实现机制 + W_O 作用 + 参数量）
 - [x] FFN + Residual + LayerNorm
 - [x] Encoder 完整数据流
-- [x] Decoder（Masked Self-Attn + Cross-Attn + Mask + Linear+Softmax）
+- [x] Decoder（Masked Self-Attn + Cross-Attn + Mask + LM Head 详解 + Linear+Softmax）
 - [x] 训练过程（Loss 计算 + 反向传播 + 残差梯度）
 - [x] Attention 类型总结
 - [ ] 读 "Attention is All You Need" 论文
@@ -715,9 +963,23 @@ A: W_Q/W_K/W_V = 层级别参数（固定）。q/k/v = 词级别中间结果（N
 
 **Q: GPT没有Encoder怎么做Cross-Attention？** A: 不做，GPT只有Masked Self-Attention+FFN。
 
-**Q: Linear层是降维吗？** A: 不是，是升维（512→50000词表）。传统分类的Linear是降维（特征→类别数），本质都是把"理解"映射到"选项得分"。
+**Q: Linear层是降维吗？** A: 不是，是升维（d_model→vocab_size）。传统分类的Linear是降维（特征→类别数），本质都是把"理解"映射到"选项得分"。
 
 **Q: 输出词数和输入词数必须一样吗？** A: 不需要。Decoder逐词生成，输出<EOS>时停止，长度由模型自己决定。
+
+### LM Head & Logits 相关
+
+**Q: LM Head 是什么？** A: 就是模型最后一个 Linear 层 (d_model → vocab_size)，没有激活函数，只做一次矩阵乘法。
+
+**Q: Logits 是什么？** A: LM Head 的原始输出，未经 Softmax 的分数 (seq_len, vocab_size)。分数越高 → Softmax 后概率越大。
+
+**Q: Softmax 会改变维度吗？** A: 不会。输入 (10, 50257) → Softmax → 输出仍是 (10, 50257)，只是数值归一化到 0~1。
+
+**Q: 推理时为什么只取最后一行 logits？** A: 只有最后一行"看完"整个 prompt，前几行只看到部分前文，对我们没用。
+
+**Q: Prefill 输入 10 个 token，能输出 10 个词吗？** A: 不能，只输出 1 个词。10 个位置各自的预测在推理时只有最后一个有用，其余只在训练时参与 Loss 计算。
+
+**Q: GPT-2 的 LM Head 和 Embedding 是同一个矩阵？** A: 是。这叫 Weight Tying，省一份参数（约 38.6M）。
 
 ### 训练相关
 
