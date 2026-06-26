@@ -206,44 +206,104 @@ print("""
 sep("实验 4：naive Attention vs Flash Attention 实测加速")
 
 print("""
-naive_attention：显式把 S、P 写到 HBM（PyTorch 默认行为）
-sdpa_attention ：torch.nn.functional.scaled_dot_product_attention
-                 → PyTorch 2.0+ 在满足条件时自动调用 Flash Attention
-                   （无需安装额外库）
+native_attention：显式把 S、P 写到 HBM（PyTorch 默认行为）
+sdpa_attention  ：torch.nn.functional.scaled_dot_product_attention
+                  → 需要 4D 张量 [batch, heads, seq, head_dim]
+                  → PyTorch 2.0+ 在满足条件时自动调用 Flash Attention
+
+注意：Flash Attention 强制要求 4D 输入。
+      3D [batch, seq, dim] 会导致所有 fused kernel 报错退化到 Math backend。
 """)
 
-d_head = 64
-print(f"{'seq_len':>10} {'naive (ms)':>12} {'SDPA/FA (ms)':>14} {'加速比':>8} {'S/P矩阵大小':>12}")
-print("-" * 65)
+NUM_HEADS = 8
+D_HEAD    = 64
+BATCH     = 4
+scale     = 1.0 / math.sqrt(D_HEAD)
 
-BATCH = 4
+print(f"配置：batch={BATCH}, num_heads={NUM_HEADS}, d_head={D_HEAD}")
+print(f"{'seq_len':>10} {'naive (ms)':>12} {'SDPA/FA (ms)':>14} {'加速比':>8} {'S/P per head':>14}")
+print("-" * 68)
+
 for sl in [512, 1024, 2048, 4096, 8192]:
-    Q = torch.randn(BATCH, sl, d_head, dtype=torch.float16, device=device)
-    K = torch.randn(BATCH, sl, d_head, dtype=torch.float16, device=device)
-    V = torch.randn(BATCH, sl, d_head, dtype=torch.float16, device=device)
-    scale = 1.0 / math.sqrt(d_head)
+    # 正确 shape：[batch, num_heads, seq_len, head_dim]
+    Q = torch.randn(BATCH, NUM_HEADS, sl, D_HEAD, dtype=torch.float16, device=device)
+    K = torch.randn(BATCH, NUM_HEADS, sl, D_HEAD, dtype=torch.float16, device=device)
+    V = torch.randn(BATCH, NUM_HEADS, sl, D_HEAD, dtype=torch.float16, device=device)
 
     def naive_attn():
-        # S 和 P 都是完整的 [B, N, N] 张量，每步都落到 HBM
-        S = torch.bmm(Q, K.transpose(1, 2)) * scale   # → HBM
-        P = torch.softmax(S, dim=-1)                   # 读 HBM → HBM
-        return torch.bmm(P, V)                         # 读 HBM → HBM
+        # [B, H, N, D] @ [B, H, D, N] -> [B, H, N, N]  每步完整落 HBM
+        S = torch.matmul(Q, K.transpose(-2, -1)) * scale
+        P = torch.softmax(S, dim=-1)
+        return torch.matmul(P, V)
 
     def sdpa_attn():
-        # PyTorch 内置，自动走 Flash Attention 路径（N×N 矩阵不落 HBM）
         return torch.nn.functional.scaled_dot_product_attention(Q, K, V, scale=scale)
 
-    t_naive = cuda_timer(naive_attn,  n_warmup=5, n_repeat=20)
-    t_sdpa  = cuda_timer(sdpa_attn,   n_warmup=5, n_repeat=20)
-    sp_mb   = BATCH * sl * sl * 2 / 1e6   # S 或 P 矩阵的字节数（float16）
+    t_naive = cuda_timer(naive_attn, n_warmup=5, n_repeat=20)
+    t_sdpa  = cuda_timer(sdpa_attn,  n_warmup=5, n_repeat=20)
+    # S/P 单头大小（每个 head 的 N×N 矩阵）
+    sp_per_head_mb = sl * sl * 2 / 1e6
 
-    print(f"{sl:>10} {t_naive:>10.3f} ms {t_sdpa:>12.3f} ms {t_naive/t_sdpa:>7.2f}x {sp_mb:>9.1f} MB")
+    print(f"{sl:>10} {t_naive:>10.3f} ms {t_sdpa:>12.3f} ms {t_naive/t_sdpa:>7.2f}x {sp_per_head_mb:>10.1f} MB/head")
     del Q, K, V
     torch.cuda.empty_cache()
 
 print("""
-→ 随 seq_len 增大，加速比持续提升——因为被省掉的 N×N IO 代价在平方增长。
-  seq_len=8192 时加速比应在 3~6x 量级（视卡型号不同）。
+→ 上面 seq_len 较小时 S/P 矩阵可能仍命中 L2 Cache（101MB），抹平了部分差距。
+  见下方实验 4b：参数调大让矩阵彻底超出 L2。
+""")
+
+
+# ════════════════════════════════════════════════════════════
+# 实验 4b：超出 L2 Cache 后的真实加速对比
+# ════════════════════════════════════════════════════════════
+sep("实验 4b：超出 L2 Cache 后的真实加速")
+
+print(f"""
+目标：让 S/P 矩阵超出 L2 Cache（{props.l2_cache_size/1e6:.0f} MB），使 naive attention 真正打到 HBM。
+
+显存占用估算（naive 同时持有 S 和 P，含所有 head）：
+  显存 = 2 × batch × num_heads × seq_len² × 2B
+  batch=1, heads=8, seq=4096  → 约 512 MB   ← 超出L2，安全
+  batch=1, heads=8, seq=8192  → 约   2 GB   ← 安全
+  batch=4, heads=8, seq=8192  → 约   8 GB   ← 安全（L20有48GB）
+""")
+
+print(f"{'seq_len':>10} {'batch':>6} {'S/P总显存':>11} {'naive (ms)':>12} {'SDPA/FA (ms)':>14} {'加速比':>8}")
+print("-" * 68)
+
+NUM_HEADS_B = 8
+D_HEAD_B    = 64
+scale_b     = 1.0 / math.sqrt(D_HEAD_B)
+
+for batch_l2, sl in [(1, 4096), (1, 8192), (4, 8192), (4, 16384)]:
+    sp_total_mb = 2 * batch_l2 * NUM_HEADS_B * sl * sl * 2 / 1e6
+    if sp_total_mb > 20_000:
+        print(f"{sl:>10} {batch_l2:>6} {sp_total_mb:>8.0f} MB  跳过（预计OOM）")
+        continue
+
+    Q = torch.randn(batch_l2, NUM_HEADS_B, sl, D_HEAD_B, dtype=torch.float16, device=device)
+    K = torch.randn(batch_l2, NUM_HEADS_B, sl, D_HEAD_B, dtype=torch.float16, device=device)
+    V = torch.randn(batch_l2, NUM_HEADS_B, sl, D_HEAD_B, dtype=torch.float16, device=device)
+
+    def naive_attn_l2():
+        S = torch.matmul(Q, K.transpose(-2, -1)) * scale_b
+        P = torch.softmax(S, dim=-1)
+        return torch.matmul(P, V)
+
+    def sdpa_attn_l2():
+        return torch.nn.functional.scaled_dot_product_attention(Q, K, V, scale=scale_b)
+
+    t_naive = cuda_timer(naive_attn_l2, n_warmup=3, n_repeat=10)
+    t_sdpa  = cuda_timer(sdpa_attn_l2,  n_warmup=3, n_repeat=10)
+
+    print(f"{sl:>10} {batch_l2:>6} {sp_total_mb:>8.0f} MB {t_naive:>10.3f} ms {t_sdpa:>12.3f} ms {t_naive/t_sdpa:>8.2f}x")
+    del Q, K, V
+    torch.cuda.empty_cache()
+
+print("""
+→ 当 S/P 总量超出 L2（>101MB），naive 每步都必须真正打到 HBM，
+  Flash Attention 省掉 HBM 绕路的收益才真正显现。
 """)
 
 
