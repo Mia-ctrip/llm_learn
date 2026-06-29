@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     storage_local_dir: str = "./storage_local"
     storage_local_base_url: str = "http://localhost:8000/files"
+    storage_url_sign_secret: str = "dev-only-change-me"
+    storage_url_ttl_seconds: int = 900  # 15 minutes
+
+    # upload constraints
+    upload_max_bytes: int = 8 * 1024 * 1024  # 8MB
+    upload_allowed_mimes: str = "image/jpeg,image/png,image/webp"
 
     # ai rate limit
     ai_analyze_daily_limit: int = 10
@@ -70,6 +76,10 @@ class Settings(BaseSettings):
         if not p.is_absolute():
             p = BACKEND_ROOT / p
         return p
+
+    @property
+    def allowed_mime_set(self) -> set[str]:
+        return {m.strip() for m in self.upload_allowed_mimes.split(",") if m.strip()}
 
 
 @lru_cache
