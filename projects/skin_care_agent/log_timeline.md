@@ -1,0 +1,1 @@
+20260627 项目开启：构建idea.md thought.md
