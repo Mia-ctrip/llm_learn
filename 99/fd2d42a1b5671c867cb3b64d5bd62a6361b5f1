@@ -1,0 +1,43 @@
+projects/skin_care_agent/backend/app/api/health.py
+  s_0162dcf78df1bc::t_762a2ab6563c4f 1-28
+projects/skin_care_agent/backend/alembic.ini
+  s_0162dcf78df1bc::t_09b3f3c54ae83b 1-43
+projects/skin_care_agent/backend/pyproject.toml
+  s_0162dcf78df1bc::t_88d83f258b1e4b 1-36
+projects/skin_care_agent/backend/app/models/base.py
+  s_0162dcf78df1bc::t_3f1564e7728159 1-27
+projects/skin_care_agent/backend/app/config.py
+  s_0162dcf78df1bc::t_d26e445a133afe 1-77
+projects/skin_care_agent/.gitignore
+  s_0162dcf78df1bc::t_ad1884e089f222 1-27
+projects/skin_care_agent/backend/README.md
+  s_0162dcf78df1bc::t_26b0813a56c2e0 1-95
+projects/skin_care_agent/backend/app/models/__init__.py
+  s_0162dcf78df1bc::t_1df51d74be1777 1-9
+projects/skin_care_agent/backend/app/db/session.py
+  s_0162dcf78df1bc::t_e6ba603e40a46d 1-32
+projects/skin_care_agent/backend/app/db/migrations/env.py
+  s_0162dcf78df1bc::t_ef56200bf643a3 1-56
+projects/skin_care_agent/backend/.env.example
+  s_0162dcf78df1bc::t_476734ef9b3a5f 1-47
+projects/skin_care_agent/backend/app/db/migrations/script.py.mako
+  s_0162dcf78df1bc::t_c272e43cc1defa 1-26
+projects/skin_care_agent/backend/app/main.py
+  s_0162dcf78df1bc::t_99e338afc21880 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.24-trip",
+  "base_commit_sha": "99fd2d42a1b5671c867cb3b64d5bd62a6361b5f1",
+  "prompts": {},
+  "sessions": {
+    "s_0162dcf78df1bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f04fdb7-847b-4a25-9a9d-1cbe02599fa6",
+        "model": "arn:aws:bedrock:us-west-2:133197901387:application-inference-profile/ypvzpmevzxdl"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
