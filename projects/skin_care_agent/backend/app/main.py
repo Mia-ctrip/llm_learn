@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import files, health, photos
+from app.api import ai_debug, analyses, chat, files, health, photos
 from app.config import get_settings
 
 
@@ -44,6 +44,9 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(photos.router)
     app.include_router(files.router)
+    app.include_router(analyses.router)
+    app.include_router(chat.router)
+    app.include_router(ai_debug.router)
 
     return app
 

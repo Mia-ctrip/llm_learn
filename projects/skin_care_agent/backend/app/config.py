@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # ai rate limit
     ai_analyze_daily_limit: int = 10
     ai_chat_daily_limit: int = 50
+    ai_ratelimit_enforce_in_dev: bool = False  # dev 环境默认豁免；true 时强制开启
 
     # ai providers
     ai_provider_primary: str = "mock"
@@ -52,15 +53,19 @@ class Settings(BaseSettings):
 
     glm_api_key: str = ""
     glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    glm_model: str = "glm-4v-plus"
+    glm_model: str = "glm-4.6v"
 
     minimax_api_key: str = ""
-    minimax_base_url: str = "https://api.minimax.chat/v1"
-    minimax_model: str = "abab6.5-chat"
+    minimax_base_url: str = "https://api.minimaxi.com/v1"
+    minimax_model: str = "MiniMax-M3"
 
     doubao_api_key: str = ""
     doubao_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     doubao_model: str = "doubao-vision-pro"
+
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_model: str = "deepseek-chat"
 
     # wechat
     wx_appid: str = ""
