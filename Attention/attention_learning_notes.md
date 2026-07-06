@@ -128,6 +128,17 @@ t_i 的第 2k+1 维 = cos(i / 10000^(2k/d))
 i = 词位置，k = 维度索引，d = d_model
 ```
 
+**直觉：每个位置产生独特的“指纹向量”**
+- 低维度（k 小）：分母小 → 频率高 → 相邻位置差异大（区分近距离）
+- 高维度（k 大）：分母大 → 频率低 → 只有远距离位置才有明显差异（区分远距离）
+- 所有维度组合 → 每个位置的向量唯一，不会混淆
+
+**⚠️ 实际代码中，加位置编码前会对 token embedding 缩放：**
+```
+x = token_embedding * sqrt(d_model) + positional_encoding
+```
+token embedding 随机初始化后数值偏小，乘以 sqrt(d_model) 让语义信息和位置信息处于相近的数值量级，避免位置编码被语义信息“淹没”。
+
 ### 2.6 输入 = 语义 + 位置（直接相加）
 
 ```
@@ -476,10 +487,14 @@ LayerNorm(f + h) = 输出 → 传给下一层
 
 ### 5.2 FFN（Feed-Forward Network）
 
-两层全连接层：`FFN(x) = W₂ · ReLU(W₁ · x + b₁) + b₂`
-- 512 → 2048（升维）+ ReLU → 2048 → 512（降维，无激活）
-- 逐位置独立（每个词单独做，词间不影响）
-- 分工：Self-Attention = 词间信息交流，FFN = 每个词自身信息加工
+两层全连接层：
+- 原版 Transformer：`FFN(x) = W₂ · ReLU(W₁ · x + b₁) + b₂`
+- **GPT 系列**：`FFN(x) = W₂ · GELU(W₁ · x + b₁) + b₂` ← 用 GELU 替代 ReLU
+
+**GELU vs ReLU**：ReLU 在 x < 0 时硬截断为 0；GELU 是其平滑版本，x < 0 时输出接近 0 但不完全为 0，梯度更平滑，训练更稳定。
+- 512 → 2048（升维）+ GELU → 2048 → 512（降维，无激活）
+- **逐位置独立**（每个词单独做，词间不影响）
+- 分工：Self-Attention = 词间信息交流，FFN = 每个词自身信息深度加工（引入非线性表达能力）
 
 ### 5.3 残差连接（Residual Connection）
 
@@ -498,7 +513,33 @@ output = γ · x̂ + β           ← γ、β 是可学习参数
 - 目的：防止数值越层越大/越小（梯度爆炸/消失），稳定训练
 - 残差 + LayerNorm 配合：既保留信息，又稳定训练 → 才能堆叠几十上百层
 
-### 5.5 Encoder 多层数据流
+### 5.5 Pre-Norm vs Post-Norm（现代 GPT 用哪种？）
+
+**原版 Transformer（Post-Norm）：**
+```
+x = LayerNorm(x + Attention(x))   ← 先做 Attention + 残差，再归一化（Norm 在后）
+x = LayerNorm(x + FFN(x))
+```
+
+**现代 GPT / LLaMA（Pre-Norm）：**
+```
+x = x + Attention(LayerNorm(x))   ← 先归一化，再做 Attention，再残差（Norm 在前）
+x = x + FFN(LayerNorm(x))
+```
+
+**记忆口诀：**
+- Post-Norm：残差在「里面」，LayerNorm 在「外面」
+- Pre-Norm： LayerNorm 在「里面」，残差在「外面」
+
+**为什么现代模型都用 Pre-Norm？**
+- Post-Norm：梯度必须穿过 LayerNorm 才能回传，深层网络容易训练不稳定
+- Pre-Norm：残差路径是“高速公路”，梯度直接回传，不受 LayerNorm 干扰，训练更稳定
+
+> ⚠️ 本笔记 5.1 节的图示是 Post-Norm（原版 Transformer）。实现 GPT 时应使用 Pre-Norm。
+
+---
+
+### 5.6 Encoder 多层数据流
 
 ```
 第0层: (embedding + 位置编码) → Self-Attn → FFN → R₀
@@ -898,14 +939,40 @@ Mask 保证位置 i 只能看到 ≤i 的信息
 ### 8.1 完整训练流程
 
 ```
-1. 拿一批翻译对（法语→英语）
-2. 法语 → Encoder×6 → R（前向传播）
-3. 英语右移一位 → Decoder×6 → Z → Linear → Softmax → 概率（前向传播）
-4. 算 Loss（交叉熵）
-5. Loss.backward()（PyTorch 自动反向传播，算出所有梯度）
-6. optimizer.step()（用梯度更新所有参数）
-7. 重复，直到 Loss 足够小
+1. 拿一批训练数据（按 batch 送入 DataLoader）
+2. 前向传播：model(input_ids) → logits（PyTorch 自动缓存各层激活值）
+3. 算 Loss：cross_entropy(logits, labels) → 一个标量
+4. 反向传播：loss.backward() → 链式法则，每个参数算出自己的梯度
+5. 梯度裁剪（可选）：clip_grad_norm_(max_norm=1.0) → 防止梯度爆炸
+6. 更新参数：optimizer.step() → AdamW 用梯度更新所有参数
+7. 清空梯度：optimizer.zero_grad() → 必须清空，否则下一个 batch 会累加
+8. 反复 N 个 epoch，周期性在验证集上算 Loss，监控是否过拟合
+9. 保存 checkpoint（模型权重 + 优化器状态）
 ```
+
+PyTorch 对应代码：
+```python
+for x, y in dataloader:
+    logits = model(x)                            # 前向传播
+    loss = F.cross_entropy(logits.view(-1, vocab_size), y.view(-1))
+    optimizer.zero_grad()                        # 清空上一步梯度
+    loss.backward()                              # 反向传播
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)  # 梯度裁剪
+    optimizer.step()                             # 更新参数
+```
+
+**⚠️ 术语澄清：「标签右移」≠「残差连接」**
+
+「标签右移一位」（Label Shift）：
+- 输入 [t0, t1, t2, t3] 对应 标签 [t1, t2, t3, t4]，整体错开一位
+- 是训练数据的构造方式：让每个位置「预测下一个词」
+- 这是数据对齐，和网络结构无关
+
+「残差连接」（Residual Connection）：
+- output = x + SubLayer(x)，把子层输入直接加回输出
+- 这是 Transformer Block 内部的结构，作用是稳定梯度传播
+
+两者字面上都有「偏移/差」的含义，但完全不同，不要混淆。
 
 ### 8.2 Loss 计算（交叉熵）
 
@@ -953,6 +1020,96 @@ Loss = 每个位置上 -log(模型给正确答案的概率) 的平均值
 - 不同随机初始化 → 不同局部最优。Multi-Head 故意利用差异性
 - Transformer 从零端到端训练，不依赖预训练组件
 - 推理时不算 Loss，直接 argmax 或采样选词
+
+---
+
+### 8.6 梯度的本质：每个参数独立计算
+
+**所有参数的梯度完全独立，不共享。**
+
+梯度的含义：“如果把这个参数调大一点点，Loss 会变多少？”
+
+W_Q、W_K、W_V 在前向传播中走的路径完全不同：
+```
+W_Q → 生成 Q → 参与 QK^T 的左边 → 影响注意力分数
+∂Loss/∂W_Q = ∂Loss/∂output × ∂output/∂Q × ∂Q/∂W_Q
+
+W_K → 生成 K → 参与 QK^T 的右边 → 影响注意力分数（方向不同！）
+∂Loss/∂W_K = ∂Loss/∂output × ∂output/∂K × ∂K/∂W_K
+
+W_V → 生成 V → 参与加权求和    → 影响最终输出値
+∂Loss/∂W_V = ∂Loss/∂output × ∂output/∂V × ∂V/∂W_V
+```
+第一项 ∂Loss/∂output 是共享的，但第二、三项各自不同，所以最终梯度三个完全不同。
+
+一个 GPT-2 Small 有1.17亿个参数，`loss.backward()` 后每个参数的 `.grad` 里存着属于它自己的那个梯度小数。
+
+---
+
+### 8.7 反向传播的粒度：每个运算都要回推
+
+一个 Transformer Block 里包含十余个运算（LayerNorm、矩阵乘法、Softmax、GELU...），**每个都会被反向推导、一个不跳过**。
+
+```
+有参数的运算（W_Q、W_K、W_V、FFN的W₁W₂、LayerNorm的γβ）
+  → 反向传播时：① 把梯度传给上一层  ② 计算自己参数的 param.grad
+
+没有参数的运算（GELU、Softmax、reshape、残差加法）
+  → 反向传播时：只负责「把梯度传递过去」，自己没有 param.grad
+```
+
+**前向传播为什么需要缓存激活値？**
+
+GELU 的反向公式需要知道正向时 GELU 的输入値才能算导数。所以前向传播时每一层的中间结果必须保留在显存里，这也是**训练激活値**占内存大的原因。
+
+---
+
+### 8.8 优化器 AdamW 详解
+
+#### 两个动量（独立计算，互不依赖）
+
+```
+g_t = 当前梯度
+
+m_t = β₁ × m_{t-1}  +  (1 - β₁) × g_t      ← 一阶动量：梯度的滑动平均
+                                              记录“这个参数最近梯度方向是哪」
+
+v_t = β₂ × v_{t-1}  +  (1 - β₂) × g_t²    ← 二阶动量：梯度²的滑动平均
+                                              记录“这个参数最近梯度幅度有多大」
+更新公式：param -= lr × m_t / (√v_t + ε)
+              ↑方向   ↑自适应缩放
+```
+
+#### 为什么 v 用平方（而不用绝对値）
+
+平方和绝对値作用相同——都是屏蔽正负号影响，只关心幅度大小。
+但 |g| 在 g=0 处导数不存在，g² 的导数是 2g，处处平滑，对自动微分更友好。
+
+v 永远是正数，这是自适应步长能工作的前提：
+```
+v 大（梯度一直很大）→ 晋/√v 小 → 步子缩小 → 防止震荡
+
+v 小（梯度一直很小）→ 1/√v 大 → 步子放大 → 加速收敛
+```
+
+#### 训练显存构成（FP32，每个参数 4 字节）
+
+```
+模型参数      × 4 bytes  ←──── 推理只有这一项（+ 激活値）
+梯度            × 4 bytes  ←──── 反向传播产生
+一阶动量 m        × 4 bytes  ←──── AdamW 优化器状态
+二阶动量 v        × 4 bytes  ←──── AdamW 优化器状态
+───────────────────────────
+合计              × 16 bytes/参数  ← 仅这四项就是推理的 4 倍
+
++ 激活値（前向传播缓存，随 batch_size × seq_len 增长）
+```
+
+| 优化器 | 额外存储 | 对比只存参数 |
+|--------|---------|------------|
+| SGD（无动量） | 只有梯度 | ×2 |
+| SGD + momentum | 梯度 + 1个动量 | ×3 |
+| **AdamW（主流）** | **梯度 + m + v** | **×4** |
 
 ---
 

@@ -11,4 +11,6 @@
 7. 专家数是什么？
 8. MoE架构范式是什么？
 9. open api的 TPM RPM分别是什么
+10.为什么prompt过长之后会出现模型循环输出？
+11. Deepseek的thinking模式是怎么实现的，thinking中的内容也是模型的输出吗？
 
