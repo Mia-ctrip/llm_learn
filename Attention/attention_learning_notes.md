@@ -1130,6 +1130,100 @@ v 小（梯度一直很小）→ 1/√v 大 → 步子放大 → 加速收敛
 
 ---
 
+## 第十章：Mini-GPT 手写实战复盘
+
+> 记录时间：2026-07-03  
+> 从零手写 GPT 模型时暴露的理解盲区与卡点，值得反复回顾
+
+---
+
+### 10.1 多头注意力：概念懂但实现卡住
+
+**卡点**：知道多头是「把 W_Q 拆成多组」，但以为可以直接对 `(batch, seq_len, d_model)` 的 Q/K/V 算 attention，不理解为什么要先 reshape。
+
+**根本原因**：
+```
+不 reshape 直接算：
+Q (batch, seq_len, d_model) @ K^T → (batch, seq_len, seq_len)  ← 1 张注意力图
+
+先 reshape 再算：
+Q (batch, n_heads, seq_len, d_k) @ K^T → (batch, n_heads, seq_len, seq_len)  ← n_heads 张独立图
+```
+reshape 本身就是「拆分成多头」的操作，不 reshape 就只有 1 张图，失去多头的意义。
+
+**正确实现**：
+```python
+# 拆分：(batch, seq_len, d_model) → (batch, n_heads, seq_len, d_k)
+Q = self.w_q(x).view(batch, seq_len, n_heads, d_k).transpose(1, 2)
+# attention 后合并：(batch, n_heads, seq_len, d_k) → (batch, seq_len, d_model)
+z = z.transpose(1, 2).contiguous().view(batch, seq_len, d_model)
+```
+`.contiguous()` 不能省：transpose 后内存不连续，view 要求连续。
+
+---
+
+### 10.2 Causal Mask：不能存在 __init__，必须动态生成
+
+**错误做法**：在 `__init__` 里用 `max_length` 生成固定 mask 存起来。
+
+**问题**：mask 形状是 `(max_length, max_length)`，但 attention 分数是 `(batch, n_heads, seq_len, seq_len)`，每次 seq_len 都不同，形状对不上 → 报错。
+
+**正确做法**：在顶层模型的 `forward` 里动态生成，基于当前实际的 seq_len：
+```python
+def forward(self, x):
+    mask = create_causal_mask(x.size(1)).to(x.device)  # 动态生成
+    for layer in self.decoders:
+        x = layer(x, mask)   # 逐层往下传
+```
+mask 不应该存在 `__init__`，也不应该存成成员变量。
+
+---
+
+### 10.3 batch_size 不能作为构造参数
+
+**错误做法**：`MultiHeadAttention.__init__(self, embed_size, num_heads, batch_size)`，把 batch_size 固定进去。
+
+**问题**：batch_size 是运行时才知道的，训练和推理时可能不同，固定死了就报错。
+
+**正确做法**：永远从 forward 的输入 x 里读取：
+```python
+def forward(self, x, mask=None):
+    batch, seq_len, _ = x.shape   # 运行时读取，不是构造时固定
+```
+
+---
+
+### 10.4 位置编码：函数 vs 缓存的区别
+
+**错误做法1**：每次 forward 都重新调用函数计算，浪费性能。
+
+**错误做法2**：存成普通成员变量 `self.pos_enc = positional_encoding(...)`，不跟随模型移动到 GPU。
+
+**正确做法**：用 `register_buffer` 存储，只算一次，自动跟随 `.to(device)`：
+```python
+# __init__ 里
+self.register_buffer('pos_enc', positional_encoding(embed_size, max_length))
+
+# forward 里切片取实际长度（pos_enc 是 3 维！）
+x = x + self.pos_enc[:, :x.size(1), :]   # ← 三个维度都要写
+```
+常见错误：写成 `self.pos_enc[:x.size(1), :]`，少了第一个 `:`，shape 对不上。
+
+---
+
+### 10.5 训练时 Loss ≠ 残差
+
+**常见混淆**：把「标签右移一位」叫做「计算残差」。
+
+实际上：
+- **标签右移**（Label Shift）= 数据对齐方式，input [t0,t1,t2] 对应 label [t1,t2,t3]
+- **残差连接**（Residual Connection）= 网络结构，`x = x + SubLayer(x)`
+- **Loss** = 预测概率与正确 token 的 Cross-Entropy，是一个标量数字
+
+三个概念完全不同，不要混淆。
+
+---
+
 ## 附录：疑问记录（Q&A）
 
 ### Q/K/V 相关
