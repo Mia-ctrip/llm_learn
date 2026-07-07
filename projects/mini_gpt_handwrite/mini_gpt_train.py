@@ -3,9 +3,6 @@ os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 import jieba
 import torch
 import torch.nn as nn
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
 import gpt_model as gpt
 from collections import Counter
 from torch.utils.data import DataLoader
@@ -114,6 +111,11 @@ def train():
     model.to(device)
     #构建优化器
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    # ===== AMP 混合精度 =====
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda') if use_amp else None
+    if use_amp:
+        print("⚡ AMP 混合精度已启用（FP16 计算 + FP32 主权重）")
     #训练
     epochs = 20
     pbar_epochs = tqdm(range(epochs), desc='训练进度', unit='epoch')
@@ -125,16 +127,24 @@ def train():
             #获取数据
             for x, y in pbar_batch:
                 x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-                #前向传播
-                logits = model(x)
-                #计算损失
-                loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+                #前向传播（AMP：Linear/matmul 自动用 FP16，LayerNorm/softmax 保持 FP32）
+                if use_amp:
+                    with torch.amp.autocast('cuda', dtype=torch.float16):
+                        logits = model(x)
+                        loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+                else:
+                    logits = model(x)
+                    loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
                 #梯度清零
                 optimizer.zero_grad()
-                #反向传播
-                loss.backward()
-                #更新参数
-                optimizer.step()
+                #反向传播（AMP：先放大 loss 防梯度下溢，再反向传播）
+                if use_amp:
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    optimizer.step()
                 epoch_loss += loss.item()
                 batch_count += 1
                 pbar_batch.set_postfix(loss=f'{loss.item():.4f}')
@@ -154,123 +164,6 @@ def train():
         'max_length': 128,
     }
     model_save(model, tokenizer, model_config)    
-
-
-# ==================== DDP 多卡训练 ====================
-
-def setup_ddp():
-    """初始化 DDP 进程组（由 torchrun 自动设置环境变量）"""
-    dist.init_process_group(backend='nccl')
-    local_rank = int(os.environ['LOCAL_RANK'])
-    torch.cuda.set_device(local_rank)
-    return local_rank
-
-
-def cleanup_ddp():
-    """销毁 DDP 进程组"""
-    dist.destroy_process_group()
-
-
-def train_ddp():
-    """
-    DDP 多卡分布式训练
-    启动方式（以 2 卡为例）：
-        torchrun --nproc_per_node=2 mini_gpt_train.py
-    4 卡：
-        torchrun --nproc_per_node=4 mini_gpt_train.py
-    """
-    # --- DDP 初始化 ---
-    local_rank = setup_ddp()
-    rank = dist.get_rank()
-    world_size = dist.get_world_size()
-    device = torch.device(f'cuda:{local_rank}')
-    is_main = (rank == 0)  # 只有主卡打印日志 / 保存模型
-
-    if is_main:
-        print(f"🚀 DDP 训练启动: {world_size} 卡并行")
-
-    # --- 语料准备（只主卡下载，避免重复） ---
-    if is_main:
-        prepare_data()
-    dist.barrier()  # 等其他卡等主卡下载完
-
-    # --- 数据加载 ---
-    text = load_text(os.path.join(_DIR, 'train.txt'))
-    tokenizer = Tokenizer(text)
-    vocab_size = tokenizer.vocab_size
-    dataset = TextDataSet(text, 128)
-
-    batch_size_per_gpu = 32  # 每张卡的 batch size，总 effective batch = 32 * world_size
-    sampler = DistributedSampler(
-        dataset, num_replicas=world_size, rank=rank, shuffle=True
-    )
-    dataLoader = DataLoader(
-        dataset, batch_size=batch_size_per_gpu, sampler=sampler,
-        num_workers=0, pin_memory=True, drop_last=True
-    )
-
-    if is_main:
-        total_batch = batch_size_per_gpu * world_size
-        print(f"📊 vocab_size={vocab_size}, 每卡 batch_size={batch_size_per_gpu}, "
-              f"总 effective batch_size={total_batch}")
-        print(f"📊 设备: {world_size} x {torch.cuda.get_device_name(local_rank)}")
-
-    # --- 模型加载 + DDP 包装 ---
-    model = gpt.mini_gpt(vocab_size, 256, 4, 10, 128)
-    model.to(device)
-    model = DDP(model, device_ids=[local_rank])
-
-    # --- 优化器 ---
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-
-    # --- 训练循环 ---
-    epochs = 20
-    pbar_epochs = tqdm(range(epochs), desc='训练进度', unit='epoch',
-                       disable=not is_main)
-    try:
-        for i in pbar_epochs:
-            sampler.set_epoch(i)  # 每个 epoch 重新打乱数据，保证各卡数据不同
-            pbar_batch = tqdm(dataLoader, desc=f'Epoch {i+1}/{epochs}',
-                              unit='batch', leave=False, disable=not is_main)
-            epoch_loss = 0
-            batch_count = 0
-            for x, y in pbar_batch:
-                x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-                logits = model(x)
-                loss = nn.functional.cross_entropy(
-                    logits.view(-1, logits.size(-1)), y.view(-1)
-                )
-                optimizer.zero_grad()
-                loss.backward()   # DDP 自动在反向传播时同步梯度
-                optimizer.step()
-                epoch_loss += loss.item()
-                batch_count += 1
-                pbar_batch.set_postfix(loss=f'{loss.item():.4f}')
-            avg_loss = epoch_loss / batch_count
-            pbar_epochs.set_postfix(avg_loss=f'{avg_loss:.4f}')
-    except Exception as e:
-        if is_main:
-            print(f"\n❌ 训练异常: {e}")
-        raise
-    finally:
-        torch.cuda.empty_cache()
-        cleanup_ddp()
-
-    # --- 保存模型（只主卡保存，去掉 DDP 的 module. 前缀） ---
-    if is_main:
-        model_config = {
-            'vocab_size': vocab_size,
-            'embed_size': 256,
-            'num_heads': 4,
-            'num_layers': 10,
-            'max_length': 128,
-        }
-        # DDP 包装后 state_dict 的 key 会多一个 'module.' 前缀
-        # 保存时去掉，保证单卡加载时兼容
-        raw_model = model.module
-        model_save(raw_model, tokenizer, model_config)
-        if is_main:
-            print(f"✅ DDP 训练完成，模型已保存")
 
 
 def model_save(model, tokenizer, model_config):
