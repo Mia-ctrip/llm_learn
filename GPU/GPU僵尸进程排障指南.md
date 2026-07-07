@@ -2,6 +2,8 @@
 
 > 实战经验：2026-07-03 在 8×H20 集群 (ocp58projgxijhtc-tr013245-0) 上排障的完整记录。
 > 驱动版本：550.144.03，CUDA 12.8
+>
+> 更新：2026-07-07 在 K8s Pod (H20 47.5GB) 上再次遇到僵尸进程，补充 K8s 环境排障方案。
 
 ---
 
@@ -115,6 +117,39 @@ sudo systemctl start nvidia-persistenced
 
 ### 方案 5：重启机器（终极方案）
 
+### 方案 6：K8s Pod 环境专用方案
+
+> 2026-07-07 实战：K8s Pod 上训练 OOM 崩溃后，PID 2328467 进程已死但占着 46GB 显存。
+
+**特点**：
+- K8s Pod 内即使有 root/sudo，也**无法操作宿主机 GPU 设备**（容器没有 `SYS_ADMIN` 等特权能力，不直接暴露 GPU 控制接口）
+- `sudo nvidia-smi --gpu-reset` 会报 `Insufficient Permissions`，这不是用户权限问题，而是**容器权限边界**限制
+- `kill -9 <PID>` **无效**，因为进程在 OS 层面已不存在，只是 GPU 驱动层的 context 残留
+- `ps aux | grep <PID>` 只匹配到 grep 自身，确认进程已死
+
+**解决方案（按推荐度排序）**：
+
+| 方法 | 命令 | 说明 |
+|------|------|------|
+| **删除 Pod 重建**（推荐） | `kubectl delete pod <pod名>` | Pod 销毁时容器运行时会清理 GPU 资源，新 Pod 显存干净 |
+| 换卡运行 | `CUDA_VISIBLE_DEVICES=1 python train.py` | 如果有其他空闲 GPU |
+| 等自动回收 | 等 10~30 分钟 | 某些驱动版本会自动回收孤立 context |
+| 联系管理员 | 让运维执行 `sudo nvidia-smi --gpu-reset` | 管理员有宿主机 root 权限 |
+
+**K8s 环境排查流程**：
+```bash
+# 1. 确认显存被谁占了
+nvidia-smi --query-compute-apps=pid,used_memory --format=csv
+
+# 2. 验证进程是否还活着
+ps -p <PID>
+# 或
+ps aux | grep <PID>  # 如果只看到 grep 自身，说明进程已死
+
+# 3. 进程已死 + 无 root → 删 Pod 重建
+kubectl delete pod <pod名>
+```
+
 ---
 
 ## 5. 完整排障流程图
@@ -162,3 +197,4 @@ ps -p <PID>  （验证进程是否存活）
 | `persistence mode is on` | PM 阻止 reset | `nvidia-smi -i N -pm 0` 后重试 |
 | `GPU has fallen off the bus` | 硬件级故障 | 需要重启机器，可能需要换卡 |
 | `in use by another client` | 其他驱动组件持有 | 重载内核模块 |
+| `Insufficient Permissions` | K8s Pod 等容器环境缺乏 GPU 设备控制权限（非用户 root 权限问题，而是容器特权能力边界） | 删 Pod 重建，或让管理员在**宿主机**上执行 |

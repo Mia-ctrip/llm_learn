@@ -112,7 +112,7 @@ def positional_encoding(embed_size, max_length):
 def attention(q, k, v, mask=None):
     attn = torch.matmul(q, k.transpose(-2, -1)) / torch.sqrt(torch.tensor(k.size(-1), dtype=torch.float))
     if mask is not None:
-        attn = attn.masked_fill(mask == 0, -1e9)
+        attn = attn.masked_fill(mask == 0, float('-inf'))
     attn = torch.softmax(attn, dim=-1)
     return torch.matmul(attn, v)
 

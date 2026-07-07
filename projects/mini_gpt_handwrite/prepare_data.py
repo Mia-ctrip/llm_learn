@@ -1,5 +1,5 @@
 """
-从 HuggingFace 下载中文 Wikipedia 语料，生成 train.txt / eval.txt
+从 HuggingFace 下载中文 Wikipedia 语料 (fjcanyue/wikipedia-zh-cn)，生成 train.txt / eval.txt
 
 用法:
     python prepare_data.py                          # 默认 5000 条训练, 500 条评估
@@ -18,7 +18,7 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 
 def prepare_zhwiki(train_rows=5000, eval_rows=500):
     """
-    下载 shibing624/zhwiki 语料，分割为训练集和评估集
+    下载 fjcanyue/wikipedia-zh-cn 语料，分割为训练集和评估集
     
     参数:
         train_rows: 训练集条数 (默认 5000)
@@ -37,9 +37,9 @@ def prepare_zhwiki(train_rows=5000, eval_rows=500):
         raise
 
     total = train_rows + eval_rows
-    print(f"正在下载 shibing624/zhwiki（共取 {total} 条，其中训练 {train_rows} 条，评估 {eval_rows} 条）...")
+    print(f"正在下载 fjcanyue/wikipedia-zh-cn（共取 {total} 条，其中训练 {train_rows} 条，评估 {eval_rows} 条）...")
 
-    dataset = load_dataset("shibing624/zhwiki", split="train", streaming=True)
+    dataset = load_dataset("fjcanyue/wikipedia-zh-cn", split="train", streaming=True)
 
     texts = []
     for i, example in enumerate(dataset):

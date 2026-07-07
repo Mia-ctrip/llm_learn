@@ -786,3 +786,472 @@ batch, seq_len, _ = x.shape
 ```
 
 **在 `forward` 里永远用运行时读取，不要在 `__init__` 里固定 batch_size。**
+
+---
+
+# 8 LLM 训练代码实战卡点与认知盲区
+
+> 记录时间：2026-07-06  
+> 来源：手写 mini_gpt 训练脚本时反复纠正的问题
+
+## 8.1 LLM 训练数据的本质：自监督学习
+
+**核心认知：LLM 的训练没有外部标签，x 和 y 是从纯文本自己构造的。**
+
+```
+传统任务：  x = "这部电影太好看了"    y = "正面情感"   ← 人工标注
+LLM 训练：  纯文本 → 编码 → 滑动窗口切分 → 自动构造 x 和 y
+```
+
+构造方式：
+```
+文本 ID：  [t0, t1, t2, t3, t4, t5]
+输入 x：   [t0, t1, t2, t3, t4]      ← 前 block_size 个
+标签 y：   [t1, t2, t3, t4, t5]      ← 整体右移一位
+```
+
+模型的任务：看到前面的 token，预测下一个 token。这就是**自监督学习（Self-Supervised Learning）**。
+
+## 8.2 滑动窗口切分：样本数 = 总 token 数 - block_size
+
+**卡点：一开始完全无法理解这个公式。**
+
+把整段文本编码成一个长 token 列表，然后用固定长度的滑动窗口切：
+
+```
+总 token 数 = 10，block_size = 3
+
+[t0, t1, t2, t3, t4, t5, t6, t7, t8, t9]
+
+样本0: x=[t0,t1,t2]  y=[t1,t2,t3]   ← 从 t0 开始
+样本1: x=[t1,t2,t3]  y=[t2,t3,t4]   ← 从 t1 开始
+...
+样本6: x=[t6,t7,t8]  y=[t7,t8,t9]   ← 最后一个
+样本数 = 7 = 10 - 3 = 总token数 - block_size
+```
+
+**易错点：不要按行切分文本！** 按行切会导致每行长度不同，无法转成 tensor。整段编码 + 滑动窗口才是正确做法。
+
+## 8.3 Tokenizer 设计卡点
+
+| 卡点 | 错误写法 | 正确写法 |
+|------|---------|----------|
+| 词表重复 | 每行去重后 extend | 全部 extend 后整体去重 |
+| `sort()` 返回 None | `list(set(x)).sort()` | `sorted(list(set(x)))` |
+| 空字符串 split | `text.split("")` 报错 | `list(text)` 拆成字符 |
+| Tokenizer 耦合文件 | 内部硬编码 `load_text()` | 外部传入 text 参数 |
+
+## 8.4 Dataset 实现卡点
+
+| 卡点 | 错误写法 | 正确写法 |
+|------|---------|----------|
+| `__len__` 返回什么 | 返回文本字符数 | 返回 `len(id_list) - block_size` |
+| `__getitem__` 返回类型 | Python list | `torch.Tensor`（dtype=torch.long） |
+| 从哪个变量切片 | 从 Python list 切 | 从 tensor 切（`self.id_token_list`） |
+| 重复编码 | 每次 `__getitem__` 都调 encoder | `__init__` 里编码一次，存起来 |
+
+## 8.5 训练循环卡点
+
+| 卡点 | 错误写法 | 正确写法 |
+|------|---------|----------|
+| 前向传播 | `model.forward(x)` | `logits = model(x)` |
+| 计算损失 | `model.loss(x, y)` | `nn.functional.cross_entropy(...)` |
+| 梯度清零 | `torch.zero_grad()` | `optimizer.zero_grad()` |
+| 反向传播 | `loss.backward(l)` | `loss.backward()` |
+| CrossEntropy 维度 | 直接传 3D logits | `.view(-1, vocab_size)` 展平成 2D |
+
+## 8.6 模型保存/加载卡点
+
+**核心认知：`state_dict()` 只保存参数值，不保存模型结构。**
+
+```
+state_dict = {"embedding.weight": tensor(...), "w_q.weight": tensor(...), ...}
+```
+
+所以加载时必须先创建**结构相同**的空模型，再灌入参数。
+
+| 卡点 | 错误写法 | 正确写法 |
+|------|---------|----------|
+| 只保存权重 | `torch.save(model.state_dict(), ...)` | 同时保存 vocab、model_config |
+| eval 用新词表 | `tokenizer = Tokenizer(eval_text)` | 从 checkpoint 恢复训练时的 vocab |
+| predict 没传 vocab_size | `model_load(vocab_size)` 外部未定义 | `model_load()` 从文件读取 |
+
+**必须保存的信息：**
+```python
+torch.save({
+    'model_state_dict': model.state_dict(),
+    'vocab': tokenizer.vocab,           # 词表（保证推理和训练一致）
+    'vocab_size': tokenizer.vocab_size,
+    'model_config': {...},              # 模型超参数
+}, 'model.pth')
+```
+
+---
+
+# 9 PyTorch 训练生态不熟悉的地方
+
+> 记录时间：2026-07-06  
+> 来源：第一次独立实现训练脚本时暴露的 PyTorch 知识盲区
+
+## 9.1 DataLoader 是迭代器，不是列表
+
+```python
+# 错误：DataLoader 不支持下标访问
+x, y = dataloader[i]           # ✗ TypeError
+
+# 正确：用 for 遍历
+for x, y in dataloader:        # ✓
+    # 每次迭代自动返回一个 batch
+```
+
+DataLoader 内部自动完成：
+1. 从 Dataset 取 `batch_size` 条样本
+2. 自动拼成 batch tensor
+3. `shuffle=True` 时每个 epoch 打乱顺序
+
+## 9.2 model.eval() 不是"评估专用"，是"切换层行为模式"
+
+| 层 | train() 模式 | eval() 模式 |
+|---|---|---|
+| Dropout | 随机丢弃神经元 | 全部保留 |
+| BatchNorm | 用当前 batch 统计量 | 用训练时累积的统计量 |
+
+**推理/评估时都必须先 `model.eval()`**，否则结果不稳定。
+
+## 9.3 torch.no_grad() 和 model.eval() 是两件事
+
+```python
+model.eval()                  # 切换层的行为模式
+with torch.no_grad():         # 关闭梯度计算，省内存
+    logits = model(x)
+```
+
+- `model.eval()` → 影响 Dropout/BatchNorm 等层的行为
+- `torch.no_grad()` → 不记录计算图，不追踪梯度，省内存
+
+两者作用不同，推理时通常一起用。
+
+## 9.4 CrossEntropyLoss 的维度要求
+
+`nn.functional.cross_entropy` 期望：
+- 预测值：`(N, C)` — 二维，N 是样本数，C 是类别数
+- 标签：`(N,)` — 一维
+
+LLM 输出是三维 `(batch, seq_len, vocab_size)`，必须展平：
+
+```python
+loss = nn.functional.cross_entropy(
+    logits.view(-1, logits.size(-1)),   # (batch*seq_len, vocab_size)
+    y.view(-1),                          # (batch*seq_len,)
+)
+```
+
+**CrossEntropyLoss 内部自动做了 softmax + NLLLoss**，不需要自己写 softmax。
+
+## 9.5 state_dict 只保存参数，不保存结构
+
+```
+保存的 = {参数名: 参数值}
+不保存 = 模型架构、vocab、超参数
+```
+
+所以加载时需要：
+1. 先创建结构相同的空模型
+2. 再 `load_state_dict()` 灌入参数
+3. 超参数和 vocab 要额外保存和恢复
+
+## 9.6 训练/推理时 vocab 必须一致
+
+模型和 tokenizer 是**一对绑定关系**：
+- 模型的 embedding 层维度 = 训练时 vocab_size
+- tokenizer 的字符→ID 映射必须和训练时完全相同
+- eval/predict 时**必须从 checkpoint 恢复训练时的 vocab**
+
+---
+
+# 10 PyTorch 模型构建 & 训练流程完整模板
+
+> 记录时间：2026-07-06  
+> 用途：下次写训练脚本时对照着写，减少卡点
+
+## 10.1 完整流程模板
+
+```python
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+
+# ============================================================
+# 第一步：Tokenizer（文本 → 数字 ID）
+# ============================================================
+class Tokenizer:
+    def __init__(self, text):
+        self.text = text
+        self.vocab = self.build_vocab(text)
+        self.vocab_size = len(self.vocab)
+
+    def encoder(self):
+        """文本 → token ID 列表"""
+        tokens = ...  # 分词逻辑
+        return [self.vocab.index(t) for t in tokens]
+
+    def decoder(self, ids):
+        """token ID 列表 → 文本"""
+        return ''.join([self.vocab[i] for i in ids])
+
+    def build_vocab(self, text):
+        """从文本构建词表"""
+        vocab = []
+        # ... 分词并收集所有不重复的 token
+        return sorted(list(set(vocab)))
+
+# ============================================================
+# 第二步：Dataset（定义"一条训练样本"）
+# ============================================================
+class TextDataset(Dataset):
+    def __init__(self, text, tokenizer, block_size):
+        self.tokenizer = tokenizer
+        self.block_size = block_size
+        # 整段文本编码一次
+        self.id_list = tokenizer.encoder()
+        self.id_tensor = torch.tensor(self.id_list, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.id_list) - self.block_size
+
+    def __getitem__(self, index):
+        # 滑动窗口切分，返回 Tensor
+        x = self.id_tensor[index : index + self.block_size]
+        y = self.id_tensor[index + 1 : index + 1 + self.block_size]
+        return x, y
+
+# ============================================================
+# 第三步：训练函数
+# ============================================================
+def train(model, dataloader, epochs, lr, device):
+    model.to(device)
+    model.train()                                    # 训练模式
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+
+    for epoch in range(epochs):
+        for x, y in dataloader:                      # DataLoader 自动给 batch
+            x, y = x.to(device), y.to(device)       # 数据移到设备
+
+            logits = model(x)                        # 前向传播
+            loss = nn.functional.cross_entropy(       # 计算损失
+                logits.view(-1, logits.size(-1)),     # (batch*seq, vocab)
+                y.view(-1),                           # (batch*seq,)
+            )
+
+            optimizer.zero_grad()                     # 清零梯度
+            loss.backward()                           # 反向传播
+            optimizer.step()                          # 更新参数
+
+        print(f'Epoch {epoch+1}, Loss: {loss.item():.4f}')
+
+# ============================================================
+# 第四步：评估函数
+# ============================================================
+def evaluate(model, dataloader, device):
+    model.to(device)
+    model.eval()                                      # 评估模式
+    total_loss = 0
+    with torch.no_grad():                             # 不计算梯度
+        for x, y in dataloader:
+            x, y = x.to(device), y.to(device)
+            logits = model(x)
+            loss = nn.functional.cross_entropy(
+                logits.view(-1, logits.size(-1)), y.view(-1)
+            )
+            total_loss += loss.item()
+    avg_loss = total_loss / len(dataloader)
+    perplexity = torch.exp(torch.tensor(avg_loss))    # 困惑度 = exp(loss)
+    print(f'Eval Loss: {avg_loss:.4f}, Perplexity: {perplexity:.2f}')
+
+# ============================================================
+# 第五步：推理/生成函数
+# ============================================================
+def generate(model, tokenizer, prompt, max_new_tokens, max_length, device):
+    model.to(device)
+    model.eval()
+    tokenizer.text = prompt
+    id_list = tokenizer.encoder()
+    input_tensor = torch.tensor([id_list], dtype=torch.long)  # (1, seq_len)
+
+    with torch.no_grad():
+        for _ in range(max_new_tokens):
+            input_tensor = input_tensor[:, -max_length:]       # 截断防超限
+            logits = model(input_tensor.to(device))
+            next_logits = logits[:, -1, :]                     # 取最后位置
+            next_token = torch.argmax(next_logits, dim=-1, keepdim=True)  # (1,1)
+            input_tensor = torch.cat([input_tensor, next_token], dim=1)
+
+    text = tokenizer.decoder(input_tensor[0].tolist())
+    return text
+
+# ============================================================
+# 第六步：保存/加载
+# ============================================================
+def save_checkpoint(model, tokenizer, model_config, path='model.pth'):
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'vocab': tokenizer.vocab,
+        'vocab_size': tokenizer.vocab_size,
+        'model_config': model_config,
+    }, path)
+
+def load_checkpoint(path='model.pth'):
+    ckpt = torch.load(path)
+    model = MyModel(**ckpt['model_config'])
+    model.load_state_dict(ckpt['model_state_dict'])
+    vocab = ckpt['vocab']
+    return model, vocab
+
+# ============================================================
+# 第七步：主程序串联
+# ============================================================
+def main():
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # 1. 准备数据
+    text = load_text('train.txt')
+    tokenizer = Tokenizer(text)
+    dataset = TextDataset(text, tokenizer, block_size=128)
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+
+    # 2. 创建模型
+    model = MyModel(vocab_size=tokenizer.vocab_size, ...)
+
+    # 3. 训练
+    train(model, dataloader, epochs=100, lr=1e-4, device=device)
+
+    # 4. 保存
+    save_checkpoint(model, tokenizer, model_config={...})
+
+    # 5. 评估
+    model, vocab = load_checkpoint()
+    eval_dataset = TextDataset(eval_text, ...)
+    eval_loader = DataLoader(eval_dataset, batch_size=16)
+    evaluate(model, eval_loader, device)
+
+    # 6. 推理
+    text = generate(model, tokenizer, "今天天气", max_new_tokens=100, ...)
+    print(text)
+```
+
+## 10.2 关键检查清单
+
+写训练脚本时逐项对照：
+
+| 检查项 | 要点 |
+|--------|------|
+| Tokenizer | 词表是否去重？encoder/decoder 是否对称？ |
+| Dataset | `__getitem__` 返回 Tensor？dtype 是 long？ |
+| DataLoader | batch_size？shuffle=True？ |
+| 模型 | 参数是否和 vocab_size 对齐？ |
+| 训练循环 | zero_grad → backward → step 顺序对吗？ |
+| Loss | logits 是否 view 成 2D？ |
+| 设备 | model.to(device)？x, y 也 .to(device)？ |
+| 保存 | 是否保存了 vocab 和 model_config？ |
+| 加载 | 是否从 checkpoint 恢复 vocab？ |
+| eval | model.eval() + torch.no_grad()？ |
+| generate | 是否截断到 max_length？keepdim=True？ |
+
+---
+
+# 11 训练实战踩坑记录
+
+> 记录时间：2026-07-07  
+> 场景：在 H20 (47.5GB) K8s Pod 上训练手写 mini_gpt，遇到的工程问题及解决
+
+## 11.1 GPU 利用率 0% 但 CPU 1000%
+
+**现象**：模型和数据都 `.to(device)` 了，但 `nvidia-smi` 显示 GPU 利用率 0%、显存 0，CPU 却拉满。
+
+**原因**：模型太小（batch_size=8, embed=256, 10层），GPU 每次计算只需几微秒，**内核启动开销比计算本身还长**。
+
+**解决**：增大 batch_size（8→16/32/64），让 GPU 每次做更多工作。
+
+**认知**：GPU 利用率 ≠ 模型是否在 GPU 上跑。太小的计算量喂不饱 GPU，利用率就是 0。
+
+## 11.2 vocab_size 爆炸导致 OOM
+
+**现象**：160M 参数模型，训练时占用 48GB 显存的 60%。重启后立刻又占满，不是僵尸进程。
+
+**原因**：jieba 分词 5000 条中文维基百科 → vocab_size=296,317。Embedding + Output 两层占参数 95%，logits 张量 (16×128×296k×4B = 2.4GB) 每个 batch 都要创建/销毁。
+
+**解决**：按词频截断词表，`MAX_VOCAB_SIZE=50000`，低频词映射到 `<UNK>`。
+
+```python
+from collections import Counter
+
+def build_vocab(self, text, max_vocab_size):
+    words = jieba.lcut(text)
+    word_counts = Counter(words)
+    vocab = ['<UNK>'] + [w for w, _ in word_counts.most_common(max_vocab_size - 1)]
+    return vocab
+
+# encoder 中用 get 而不是 if in，确保未登录词映射到 UNK
+return [self.word2id.get(token, self.unk_id) for token in text_list]
+```
+
+**认知**：
+- vocab_size 不影响模型“深度”（内部维度 embed_size），但决定了“出口宽度”
+- 参数量不能只看数字，要看**参数分布在哪**。Embedding/Output 与 vocab 正比，Decoder 与 hidden_size 正比
+- logits 张量 = batch × seq × vocab，可能比模型参数本身还大
+
+## 11.3 num_workers 在 K8s/Windows 下引发内存翻倍
+
+**现象**：设置 `num_workers=4` 后 OOM。
+
+**原因**：DataLoader 的每个 worker 进程会**复制整个 Dataset 内存**。5 个进程（主进程 + 4 worker）= 5 份数据副本。
+
+**解决**：`num_workers=0`，在主进程加载数据。
+
+**认知**：`num_workers` 不是万能的。Dataset 很大时（如 jieba 分词百万 token），多进程反而吃爆内存。Linux 下可以用，但 K8s Pod / Windows 下优先设为 0。
+
+## 11.4 OOM 后 GPU 僵尸进程
+
+**现象**：训练 OOM 崩溃后，`nvidia-smi` 显示进程占 46GB 显存，但 `ps aux | grep <PID>` 找不到进程。
+
+**原因**：进程崩溃时 GPU 驱动未正确释放 CUDA context，形成孤儿上下文。
+
+**解决**：
+- 有 root：`sudo nvidia-smi --gpu-reset`
+- K8s Pod：`kubectl delete pod` 重建（容器运行时会自动回收 GPU 资源）
+- 终极：重启机器
+
+**预防**：
+```python
+try:
+    train()
+except Exception as e:
+    print(f"训练异常: {e}")
+    raise
+finally:
+    torch.cuda.empty_cache()  # 确保异常时释放显存
+```
+
+## 11.5 训练太慢：数据量过大
+
+**现象**：521,365 个 batch/epoch，每 epoch 要 39 小时。
+
+**原因**：5000 条中文维基百科 ≈ 834 万 token，滑动窗口生成样本太多。
+
+**解决**：
+- 减少训练数据：5000 条 → 1000 条
+- 增大 batch_size：16 → 32（利用剩余显存）
+
+**认知**：学习用 mini_gpt 不需要太多数据，1000 条足够学到基本模式。
+
+## 11.6 训练显存排查清单
+
+下次训练前先过一遍：
+
+| 检查项 | 怎么查 | 预期 |
+|--------|--------|------|
+| vocab_size | `print(tokenizer.vocab_size)` | 30k-100k 合理，超过则截断 |
+| 模型参数量 | `sum(p.numel() for p in model.parameters())` | 和 vocab_size 对比看分布 |
+| 单 batch logits | `batch × seq × vocab × 4B` | 不应超过几 GB |
+| nvidia-smi | 训练时监控 | 不应超过 80% |
+| num_workers | 根据环境设置 | K8s/Windows 用 0 |

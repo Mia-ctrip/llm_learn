@@ -1,34 +1,47 @@
 import os
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 import jieba
 import torch
 import torch.nn as nn
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 import gpt_model as gpt
+from collections import Counter
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from prepare_data import prepare_zhwiki
 
 
+# 词表上限，超过则截取高频词，剩余用 <UNK> 代替
+MAX_VOCAB_SIZE = 50000
+UNK_TOKEN = '<UNK>'
+
 
 class Tokenizer():
-    def __init__(self, text):
+    def __init__(self, text, max_vocab_size=MAX_VOCAB_SIZE):
         self.text = text
-        self.vocab = self.build_vocab(text)
+        self.vocab = self.build_vocab(text, max_vocab_size)
         self.vocab_size = len(self.vocab)
+        self.word2id = {w: i for i, w in enumerate(self.vocab)}  # O(1) 查找
+        self.unk_id = self.word2id.get(UNK_TOKEN, 0)
 
     def encoder(self):
         text_list = jieba.lcut(self.text)
-        return [self.vocab.index(token) for token in text_list if token in self.vocab]
+        return [self.word2id.get(token, self.unk_id) for token in text_list]
 
     def decoder(self, tokens):
-        return ''.join([self.vocab[token] for token in tokens])
+        return ''.join([self.vocab[token] for token in tokens if token < len(self.vocab)])
 
-    def build_vocab(self, text):
-        self.vocab = []
-        text = text.split('\n')
-        for line in text:
-            word_list = jieba.lcut(line)
-            self.vocab.extend(word_list)
-        return sorted(list(set(self.vocab)))    
+    def build_vocab(self, text, max_vocab_size):
+        words = jieba.lcut(text)  # 一次性分词所有文本
+        # 按词频排序，截取 top-k 高频词
+        word_counts = Counter(words)
+        # 保留 UNK token
+        vocab = [UNK_TOKEN] + [w for w, _ in word_counts.most_common(max_vocab_size - 1)]
+        original_size = len(set(words))
+        print(f"📝 词表构建: 原始词数={original_size}, 截取后={len(vocab)} (max_vocab_size={max_vocab_size})")
+        return vocab
 
 
 class TextDataSet(torch.utils.data.Dataset):
@@ -55,7 +68,7 @@ def load_text(file_path):
     return text
 
 
-def prepare_data(min_train_rows=5000, min_eval_rows=500):
+def prepare_data(min_train_rows=1000, min_eval_rows=100):
     """检查语料是否足够，不够则自动下载"""
     train_path = os.path.join(_DIR, 'train.txt')
     eval_path = os.path.join(_DIR, 'eval.txt')
@@ -88,42 +101,51 @@ def train():
     text = load_text(os.path.join(_DIR, 'train.txt'))
     tokenizer = Tokenizer(text)
     vocab_size = tokenizer.vocab_size
+    print(f"🔧 vocab_size={vocab_size}, 预计模型参数量≈{vocab_size * 256 * 2 / 1e6:.1f}M (Embedding+Output)")
     #数据加载
     dataset = TextDataSet(text, 128)
-    #dataLoader
-    batch_size = 8
-    dataLoader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    #dataLoader (num_workers=0 避免 K8s/Windows 下多进程内存翻倍)
+    batch_size = 32
+    dataLoader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
     #模型加载
     model = gpt.mini_gpt(vocab_size, 256, 4, 10, 128)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"📊 使用设备: {device}")
     model.to(device)
     #构建优化器
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     #训练
     epochs = 20
     pbar_epochs = tqdm(range(epochs), desc='训练进度', unit='epoch')
-    for i in pbar_epochs:
-        pbar_batch = tqdm(dataLoader, desc=f'Epoch {i+1}/{epochs}', unit='batch', leave=False)
-        epoch_loss = 0
-        batch_count = 0
-        #获取数据
-        for x, y in pbar_batch:
-            x, y = x.to(device), y.to(device)
-            #前向传播
-            logits = model(x)
-            #计算损失
-            loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
-            #梯度清零
-            optimizer.zero_grad()
-            #反向传播
-            loss.backward()
-            #更新参数
-            optimizer.step()
-            epoch_loss += loss.item()
-            batch_count += 1
-            pbar_batch.set_postfix(loss=f'{loss.item():.4f}')
-        avg_loss = epoch_loss / batch_count
-        pbar_epochs.set_postfix(avg_loss=f'{avg_loss:.4f}')
+    try:
+        for i in pbar_epochs:
+            pbar_batch = tqdm(dataLoader, desc=f'Epoch {i+1}/{epochs}', unit='batch', leave=False)
+            epoch_loss = 0
+            batch_count = 0
+            #获取数据
+            for x, y in pbar_batch:
+                x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+                #前向传播
+                logits = model(x)
+                #计算损失
+                loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+                #梯度清零
+                optimizer.zero_grad()
+                #反向传播
+                loss.backward()
+                #更新参数
+                optimizer.step()
+                epoch_loss += loss.item()
+                batch_count += 1
+                pbar_batch.set_postfix(loss=f'{loss.item():.4f}')
+            avg_loss = epoch_loss / batch_count
+            pbar_epochs.set_postfix(avg_loss=f'{avg_loss:.4f}')
+    except Exception as e:
+        print(f"\n❌ 训练异常: {e}")
+        raise
+    finally:
+        # 确保异常时释放 GPU 显存
+        torch.cuda.empty_cache()
     model_config = {
         'vocab_size': vocab_size,
         'embed_size': 256,
@@ -132,6 +154,123 @@ def train():
         'max_length': 128,
     }
     model_save(model, tokenizer, model_config)    
+
+
+# ==================== DDP 多卡训练 ====================
+
+def setup_ddp():
+    """初始化 DDP 进程组（由 torchrun 自动设置环境变量）"""
+    dist.init_process_group(backend='nccl')
+    local_rank = int(os.environ['LOCAL_RANK'])
+    torch.cuda.set_device(local_rank)
+    return local_rank
+
+
+def cleanup_ddp():
+    """销毁 DDP 进程组"""
+    dist.destroy_process_group()
+
+
+def train_ddp():
+    """
+    DDP 多卡分布式训练
+    启动方式（以 2 卡为例）：
+        torchrun --nproc_per_node=2 mini_gpt_train.py
+    4 卡：
+        torchrun --nproc_per_node=4 mini_gpt_train.py
+    """
+    # --- DDP 初始化 ---
+    local_rank = setup_ddp()
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    device = torch.device(f'cuda:{local_rank}')
+    is_main = (rank == 0)  # 只有主卡打印日志 / 保存模型
+
+    if is_main:
+        print(f"🚀 DDP 训练启动: {world_size} 卡并行")
+
+    # --- 语料准备（只主卡下载，避免重复） ---
+    if is_main:
+        prepare_data()
+    dist.barrier()  # 等其他卡等主卡下载完
+
+    # --- 数据加载 ---
+    text = load_text(os.path.join(_DIR, 'train.txt'))
+    tokenizer = Tokenizer(text)
+    vocab_size = tokenizer.vocab_size
+    dataset = TextDataSet(text, 128)
+
+    batch_size_per_gpu = 32  # 每张卡的 batch size，总 effective batch = 32 * world_size
+    sampler = DistributedSampler(
+        dataset, num_replicas=world_size, rank=rank, shuffle=True
+    )
+    dataLoader = DataLoader(
+        dataset, batch_size=batch_size_per_gpu, sampler=sampler,
+        num_workers=0, pin_memory=True, drop_last=True
+    )
+
+    if is_main:
+        total_batch = batch_size_per_gpu * world_size
+        print(f"📊 vocab_size={vocab_size}, 每卡 batch_size={batch_size_per_gpu}, "
+              f"总 effective batch_size={total_batch}")
+        print(f"📊 设备: {world_size} x {torch.cuda.get_device_name(local_rank)}")
+
+    # --- 模型加载 + DDP 包装 ---
+    model = gpt.mini_gpt(vocab_size, 256, 4, 10, 128)
+    model.to(device)
+    model = DDP(model, device_ids=[local_rank])
+
+    # --- 优化器 ---
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
+    # --- 训练循环 ---
+    epochs = 20
+    pbar_epochs = tqdm(range(epochs), desc='训练进度', unit='epoch',
+                       disable=not is_main)
+    try:
+        for i in pbar_epochs:
+            sampler.set_epoch(i)  # 每个 epoch 重新打乱数据，保证各卡数据不同
+            pbar_batch = tqdm(dataLoader, desc=f'Epoch {i+1}/{epochs}',
+                              unit='batch', leave=False, disable=not is_main)
+            epoch_loss = 0
+            batch_count = 0
+            for x, y in pbar_batch:
+                x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+                logits = model(x)
+                loss = nn.functional.cross_entropy(
+                    logits.view(-1, logits.size(-1)), y.view(-1)
+                )
+                optimizer.zero_grad()
+                loss.backward()   # DDP 自动在反向传播时同步梯度
+                optimizer.step()
+                epoch_loss += loss.item()
+                batch_count += 1
+                pbar_batch.set_postfix(loss=f'{loss.item():.4f}')
+            avg_loss = epoch_loss / batch_count
+            pbar_epochs.set_postfix(avg_loss=f'{avg_loss:.4f}')
+    except Exception as e:
+        if is_main:
+            print(f"\n❌ 训练异常: {e}")
+        raise
+    finally:
+        torch.cuda.empty_cache()
+        cleanup_ddp()
+
+    # --- 保存模型（只主卡保存，去掉 DDP 的 module. 前缀） ---
+    if is_main:
+        model_config = {
+            'vocab_size': vocab_size,
+            'embed_size': 256,
+            'num_heads': 4,
+            'num_layers': 10,
+            'max_length': 128,
+        }
+        # DDP 包装后 state_dict 的 key 会多一个 'module.' 前缀
+        # 保存时去掉，保证单卡加载时兼容
+        raw_model = model.module
+        model_save(raw_model, tokenizer, model_config)
+        if is_main:
+            print(f"✅ DDP 训练完成，模型已保存")
 
 
 def model_save(model, tokenizer, model_config):

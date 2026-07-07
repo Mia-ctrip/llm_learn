@@ -558,4 +558,112 @@ QPS = 300 / 60 = 5 req/s
 
 ---
 
+## 13. 实战案例：mini_gpt 训练显存排查（2026-07-07）
+
+> 场景：在 H20 (47.5GB) K8s Pod 上训练手写 mini_gpt，遇到 OOM 和显存异常占用。
+
+### 13.1 模型配置
+
+```
+mini_gpt(vocab_size=296317, embed_size=256, num_heads=4, num_layers=10, max_length=128)
+batch_size=16, FP32, AdamW 优化器
+```
+
+### 13.2 现象
+
+- 模型参数量看起来不大：`~160M`，直觉上应该很小
+- 但训练时占用 **48GB 显存的 60% ≈ 28.8GB**
+- 重启机器后立刻又占满，不是僵尸进程，是模型本身吃的
+
+### 13.3 显存拆解分析
+
+| 组件 | 计算 | 显存 | 占比 |
+|------|------|------|------|
+| Embedding 权重 | 296k × 256 × 4B | 303MB | |
+| Output Linear 权重 | 256 × 296k × 4B | 303MB | |
+| Decoder ×10 层权重 | ~7.9M × 4B | 32MB | |
+| **模型参数小计** | **~160M × 4B** | **640MB** | **2%** |
+| 梯度 | 同参数 | 640MB | 2% |
+| AdamW 状态 (m+v) | 160M × 8B | 1.28GB | 4% |
+| **logits 张量** | **16×128×296k×4B** | **2.4GB** | **8%** |
+| **logits 梯度** | 同上 | **2.4GB** | **8%** |
+| 其他激活值 | | ~20MB | |
+| **PyTorch CUDA 缓存** | allocated + cached | **~20GB** | **69%** |
+| **总计** | | **≈28.8GB** | **100%** |
+
+### 13.4 关键发现
+
+**① vocab_size 决定了模型的“大头”**
+
+```
+参数构成（vocab=296k）：
+
+Embedding  ██████████████████████████████████████  75.9M (47%)
+Output     ██████████████████████████████████████  75.9M (47%)
+Decoder×10 ████                                     7.9M (5%)
+```
+
+160M 参数中 **95% 来自 Embedding 和 Output 两层**，中间的 10 层 Decoder 只占 5%。
+
+vocab_size 不影响模型“深度”（内部维度 embed_size=256），但决定了模型的“出口宽度”。
+
+**② logits 张量是运行时显存杀手**
+
+正如第 3.3 节所述：`LM Head logits: batch × seq_len × vocab_size × bytes` 往往是运行时最大的激活值。
+
+训练时更严重：前向 logits + 反向梯度 = **2 份**，合计 4.8GB。
+
+**③ 经验公式失效的场景**
+
+第 3.3 节的经验估算 `运行时显存 ≈ 模型权重的 10-20%`，在 vocab_size 远大于 hidden_size 时**完全失效**：
+- 模型权重：640MB
+- 运行时 logits：4.8GB
+- 比值：**750%** 而非 10-20%
+
+原因：该经验值适用于 vocab_size 和 hidden_size 同量级的大模型（如 Qwen2.5-7B: vocab=152k, hidden=3584），但 mini_gpt 的 vocab(296k) 比 embed(256) 大了 **1000+ 倍**。
+
+**④ PyTorch CUDA 缓存分配器**
+
+`nvidia-smi` 显示的显存 = PyTorch **allocated + cached**。PyTorch 会缓存已释放的显存块，这部分也算在占用里。实际 allocated 可能只有 ~10GB，但 cached 让 nvidia-smi 显示 ~28GB。
+
+### 13.5 解决方案
+
+| 方案 | 效果 | 说明 |
+|------|------|------|
+| **截断词表** MAX_VOCAB_SIZE=50k | 显存从 28GB → ~5GB | 按词频保留 top-k，低频词用 `<UNK>` |
+| 减小 batch_size: 64 → 16 | 避免 OOM | logits 张量与 batch_size 成正比 |
+| num_workers=0 | 避免 K8s/Windows 多进程内存翻倍 | 每个 worker 复制整个数据集 |
+| try/finally + torch.cuda.empty_cache() | 崩溃时释放显存 | 避免僵尸进程 |
+
+### 13.6 截断词表后的预期显存
+
+```
+vocab=50k, batch=32, FP32, AdamW:
+
+参数:     50k×256×2 + 7.9M ≈ 33.5M × 4B ≈ 134MB
+梯度:     134MB
+AdamW:    33.5M × 8B ≈ 268MB
+logits:   32×128×50k×4B ≈ 819MB
+logits梯度: 819MB
+总计:     ≈ 2.2GB（显存占比从 60% → ~5%）
+```
+
+显存大幅释放后，可以加大 batch_size 提升训练速度。
+
+### 13.7 案例启示
+
+```
+训练显存估算不能只看“参数量”！必须拆开看：
+
+1. 参数在哪里？ → Embedding/Output 与 vocab_size 相关，Decoder 与 hidden_size 相关
+2. 运行时张量有多大？ → logits = batch × seq × vocab，可能比参数本身还大
+3. 优化器状态多大？ → AdamW 额外 8B/param
+4. PyTorch 缓存多少？ → nvidia-smi 显示的是 allocated + cached
+
+完整公式：
+训练显存 = 参数×4B + 梯度×4B + AdamW×8B + logits×4B×2 + PyTorch缓存
+```
+
+---
+
 继续下一部分：实战习题 + 你的数据分析
