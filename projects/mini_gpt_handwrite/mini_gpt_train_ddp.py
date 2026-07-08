@@ -136,15 +136,16 @@ def train_ddp():
     model = gpt.mini_gpt_sdpa(vocab_size, 1024, 8, 16, 256)  # num_heads=8, head_dim=128（Flash Attention 最优）
     model.to(device)
 
-    # torch.compile：先 compile 内层模型，再 DDP 包装
-    # 反过来 DDP→compile 会把通信逻辑也编译进图，导致极慢或异常
-    if hasattr(torch, 'compile'):
-        model = torch.compile(model)
-        if is_main:
-            print("🔥 torch.compile 已启用（compile → DDP 正确顺序）")
+    # torch.compile 与 DDP 在某些 GPU/驱动组合下会导致 NCCL 死锁
+    # 暂不启用，如需尝试可取消注释
+    # if hasattr(torch, 'compile'):
+    #     model = torch.compile(model)
+    #     if is_main:
+    #         print("🔥 torch.compile 已启用（compile → DDP 正确顺序）")
 
     # DDP 包装：gradient_as_bucket_view 省一份梯度拷贝
-    model = DDP(model, device_ids=[local_rank], gradient_as_bucket_view=True)
+    # static_graph=True: 告诉 DDP 计算图固定，避免每次 step 重新探测未使用参数，减少 NCCL 异常
+    model = DDP(model, device_ids=[local_rank], gradient_as_bucket_view=True, static_graph=True)
 
     # --- 5. 优化器 ---
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
