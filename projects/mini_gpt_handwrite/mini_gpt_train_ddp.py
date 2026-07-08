@@ -7,7 +7,7 @@ mini_gpt DDP 多卡分布式训练
 
 注意：
   - 需要 NCCL 后端，仅支持 Linux（Windows 下需用 gloo 后端，但 GPU 训练推荐 Linux）
-  - 每张卡的 batch_size=32，总 effective batch_size = 32 × 卡数
+  - 每张卡的 batch_size=128，总 effective batch_size = 128 × 卡数
   - 训练完成后模型保存到 model.pth，与单卡版本格式完全一致，可直接用单卡代码加载
 """
 
@@ -15,25 +15,42 @@ import os
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 import sys
-import jieba
 import torch
 import torch.nn as nn
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader
-from collections import Counter
 from tqdm import tqdm
 
-import gpt_model as gpt
+import gpt_model_sdpa as gpt
 from mini_gpt_train import (
     Tokenizer,
-    TextDataSet,
     prepare_data,
     load_text,
     model_save,
     _DIR,
 )
+
+
+# ==================== 高效 DataSet ====================
+
+class FastTextDataSet(torch.utils.data.Dataset):
+    """
+    复用外部已构建好的 tokenizer，避免每个进程重复 jieba 分词。
+    原 TextDataSet.__init__ 会再创建一个 Tokenizer，在大语料下非常慢。
+    """
+    def __init__(self, id_tensor, block_size):
+        self.id_tensor = id_tensor
+        self.block_size = block_size
+
+    def __len__(self):
+        return len(self.id_tensor) - self.block_size
+
+    def __getitem__(self, index):
+        x = self.id_tensor[index : index + self.block_size]
+        y = self.id_tensor[index + 1 : index + 1 + self.block_size]
+        return x, y
 
 
 # ==================== DDP 工具函数 ====================
@@ -77,6 +94,8 @@ def train_ddp():
     if is_main:
         print(f"🚀 DDP 训练启动: {world_size} 卡并行")
         print(f"   卡列表: {[torch.cuda.get_device_name(i) for i in range(world_size)]}")
+        # 关键诊断：确认 CUDA 真的可用，否则全部在 CPU 跑会极慢
+        print(f"   CUDA available: {torch.cuda.is_available()}, device count: {torch.cuda.device_count()}")
 
     # --- 2. 语料准备（只主卡下载，其他卡等待） ---
     if is_main:
@@ -87,9 +106,13 @@ def train_ddp():
     text = load_text(os.path.join(_DIR, 'train.txt'))
     tokenizer = Tokenizer(text)
     vocab_size = tokenizer.vocab_size
-    dataset = TextDataSet(text, 128)
+    # 先编码一次，传给 FastTextDataSet，避免内部再分词
+    id_tensor = torch.tensor(tokenizer.encoder(), dtype=torch.long)
+    dataset = FastTextDataSet(id_tensor, 256)
 
-    batch_size_per_gpu = 32  # 每张卡的 batch size
+    batch_size_per_gpu = 128  # 每张卡的 batch size
+    # K8s Pod 下 num_workers 会导致每个 worker 复制完整 Dataset 内存，引发内存翻倍
+    # 使用 FastTextDataSet（只含 tensor，不分词）+ num_workers=0 避免此问题
     # DistributedSampler: 将数据集按 rank 切分，每卡拿到不同的数据子集
     sampler = DistributedSampler(
         dataset, num_replicas=world_size, rank=rank, shuffle=True
@@ -110,16 +133,30 @@ def train_ddp():
         print(f"📊 设备: {world_size} x {torch.cuda.get_device_name(local_rank)}")
 
     # --- 4. 模型加载 + DDP 包装 ---
-    model = gpt.mini_gpt(vocab_size, 256, 4, 10, 128)
+    model = gpt.mini_gpt_sdpa(vocab_size, 1024, 8, 16, 256)  # num_heads=8, head_dim=128（Flash Attention 最优）
     model.to(device)
-    # DDP 包装：每个进程有自己的模型副本，反向传播时通过 all-reduce 自动同步梯度
-    model = DDP(model, device_ids=[local_rank])
+
+    # torch.compile：先 compile 内层模型，再 DDP 包装
+    # 反过来 DDP→compile 会把通信逻辑也编译进图，导致极慢或异常
+    if hasattr(torch, 'compile'):
+        model = torch.compile(model)
+        if is_main:
+            print("🔥 torch.compile 已启用（compile → DDP 正确顺序）")
+
+    # DDP 包装：gradient_as_bucket_view 省一份梯度拷贝
+    model = DDP(model, device_ids=[local_rank], gradient_as_bucket_view=True)
 
     # --- 5. 优化器 ---
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    # zero_grad(set_to_none=True) 比默认 zero_grad() 更快更省显存
+
+    # --- 5.5 AMP 混合精度 ---
+    scaler = torch.amp.GradScaler('cuda')
+    if is_main:
+        print("⚡ AMP 混合精度已启用（FP16 计算 + FP32 主权重）")
 
     # --- 6. 训练循环 ---
-    epochs = 20
+    epochs = 50
     pbar_epochs = tqdm(
         range(epochs), desc='训练进度', unit='epoch',
         disable=not is_main  # 只主卡显示进度条
@@ -134,30 +171,31 @@ def train_ddp():
                 dataLoader, desc=f'Epoch {epoch+1}/{epochs}',
                 unit='batch', leave=False, disable=not is_main
             )
-            epoch_loss = 0
+            epoch_loss = 0.0
             batch_count = 0
 
             for x, y in pbar_batch:
                 x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
 
-                # 前向传播
-                logits = model(x)
-                # 计算损失
-                loss = nn.functional.cross_entropy(
-                    logits.view(-1, logits.size(-1)), y.view(-1)
-                )
-                # 梯度清零
-                optimizer.zero_grad()
-                # 反向传播（DDP 在这里自动执行跨卡梯度同步 all-reduce）
-                loss.backward()
-                # 更新参数（每张卡用相同的梯度更新，保持模型一致）
-                optimizer.step()
+                # 前向传播（AMP：Linear/matmul 自动用 FP16，LayerNorm/softmax 保持 FP32）
+                with torch.amp.autocast('cuda', dtype=torch.float16):
+                    logits = model(x)
+                    loss = nn.functional.cross_entropy(
+                        logits.view(-1, logits.size(-1)), y.view(-1)
+                    )
+                # 梯度清零（set_to_none 比 fill_(0) 更快更省显存）
+                optimizer.zero_grad(set_to_none=True)
+                # 反向传播（AMP：先放大 loss 防梯度下溢，再反向传播；DDP 自动 all-reduce）
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
 
-                epoch_loss += loss.item()
+                # 用 detach 避免每步 GPU→CPU 同步打断流水线，epoch 结束再统一算
+                epoch_loss += loss.detach().float()
                 batch_count += 1
-                pbar_batch.set_postfix(loss=f'{loss.item():.4f}')
 
-            avg_loss = epoch_loss / batch_count
+            # epoch 结束一次性同步，计算平均 loss
+            avg_loss = (epoch_loss / batch_count).item()
             pbar_epochs.set_postfix(avg_loss=f'{avg_loss:.4f}')
 
     except Exception as e:
@@ -172,14 +210,16 @@ def train_ddp():
     if is_main:
         model_config = {
             'vocab_size': vocab_size,
-            'embed_size': 256,
-            'num_heads': 4,
-            'num_layers': 10,
-            'max_length': 128,
+            'embed_size': 1024,
+            'num_heads': 8,
+            'num_layers': 16,
+            'max_length': 256,
         }
-        # 关键：DDP 包装后模型的 state_dict key 会多 'module.' 前缀
-        # 用 model.module 取出原始模型再保存，保证单卡代码可以直接加载
-        raw_model = model.module
+        # 关键：DDP + compile 双层包装，需要逐层解包拿到原始模型
+        # DDP → OptimizedModule(torch.compile) → 原始模型
+        raw_model = model.module  # 解 DDP
+        if hasattr(raw_model, '_orig_mod'):
+            raw_model = raw_model._orig_mod  # 解 torch.compile
         model_save(raw_model, tokenizer, model_config)
         print(f"✅ DDP 训练完成，模型已保存到 model.pth")
 
