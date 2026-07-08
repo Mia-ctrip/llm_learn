@@ -198,6 +198,8 @@ def evaluate():
     tokenizer = Tokenizer.__new__(Tokenizer)
     tokenizer.vocab = vocab
     tokenizer.vocab_size = len(vocab)
+    tokenizer.word2id = {w: i for i, w in enumerate(vocab)}
+    tokenizer.unk_id = tokenizer.word2id.get(UNK_TOKEN, 0)
     text = load_text('eval.txt')
     tokenizer.text = text
     #数据加载
@@ -234,6 +236,8 @@ def predict(prompt="今天天气", max_new_tokens=100, max_length=128):
     tokenizer = Tokenizer.__new__(Tokenizer)
     tokenizer.vocab = vocab
     tokenizer.vocab_size = len(vocab)
+    tokenizer.word2id = {w: i for i, w in enumerate(vocab)}
+    tokenizer.unk_id = tokenizer.word2id.get(UNK_TOKEN, 0)
     tokenizer.text = prompt
     # 编码 prompt
     id_list = tokenizer.encoder()

@@ -287,7 +287,119 @@ nvidia-smi vgpu -q       # vGPU 查询（独立子命令）
 nvidia-smi vgpu -c       # vGPU 能力
 虽然也叫 -q，但是是 vgpu 子命令下的，主 -q 看不到 vGPU 详情。
 
+## 4. GPU 架构与算力规格
 
+理解 GPU 的算力指标（TFLOPS、SM 数量等）是怎么来的，以及不同架构/型号之间的本质差异。
+
+### 4.1 SM —— GPU 的核心计算单元
+
+**SM（Streaming Multiprocessor，流式多处理器）** 是 GPU 的基本调度与计算单元，类似 CPU 的“核”。
+
+每个 SM 内部包含：
+- **CUDA Core**（通用计算单元，处理 FP32/FP64/INT32）
+- **Tensor Core**（矩阵乘法专用加速单元）
+- **共享内存（SRAM）**（SM 内线程共享的高速缓存）
+- **寄存器文件**（线程私有的最快存储）
+
+**SM 数量由芯片设计决定，是物理固定的**，同一架构下通过“闲割” SM 数量来区分产品档次。
+
+### 4.2 TFLOPS 算力怎么算
+
+TFLOPS（每秒万亿次浮点运算）是峰值算力的衡量单位，由架构参数算出：
+
+```
+峰值 TFLOPS = SM数量 × 每SM的TensorCore数 × 每TC每周期FMA操作数 × 2 × SM频率
+```
+
+其中“×2”是因为一次 FMA（乘加）算 2 次浮点操作。
+
+以 Tensor Core FP16 为例：
+
+| 参数 | H100 SXM | H20 |
+|------|----------|------|
+| 架构 | Hopper (GH100) | Hopper (GH100，闲割版) |
+| SM 数量 | 132 | ~60 |
+| 每 SM Tensor Core | 4（第4代） | 4（第4代） |
+| 每 TC 每周期 FMA 操作数 | 256 | 256 |
+| Boost 频率 | ~1.83 GHz | ~1.5-1.8 GHz |
+| **FP16 Tensor Core 算力** | **~990 TFLOPS（含稀疏）** | **~448 TFLOPS（含稀疏）** |
+
+### 4.3 架构决定什么，不决定什么
+
+| 特性 | 由什么决定 | 举例 |
+|------|-----------|------|
+| SM 内部结构 | **架构代际** | Hopper SM 比 Ada 多了异步执行引擎 |
+| Tensor Core 代数 | **架构代际** | Hopper/Ampere = 第3/4代 TC |
+| SM 数量 | **芯片型号** | 同架构不同型号 SM 数不同 |
+| 显存类型/带宽 | **芯片封装** | H20 用 HBM3 (4TB/s)，L20 用 GDDR6 (864GB/s) |
+| NVLink 带宽 | **互联设计** | H20 NVLink 900GB/s，L20 不支持 NVLink |
+| 时钟频率 | **功耗/散热设计** | 数据中心卡 vs 消费卡频率不同 |
+
+### 4.4 常见 GPU 算力对比表
+
+| GPU | 架构 | SM数 | 显存 | 显存带宽 | FP16 Tensor Core | NVLink | 定位 |
+|-----|------|------|------|---------|-----------------|--------|------|
+| L20 | Ada (AD102) | ~142 | 48GB GDDR6 | 864 GB/s | ~300 TFLOPS | ❌ 不支持 | 中国特供工作站 |
+| L40S | Ada (AD102) | 142 | 48GB GDDR6 | 864 GB/s | ~366 TFLOPS | ❌ | 工作站/推理 |
+| A100 | Ampere (GA100) | 108 | 80GB HBM2e | 2039 GB/s | ~312 TFLOPS | 600 GB/s | 数据中心 |
+| H100 SXM | Hopper (GH100) | 132 | 80GB HBM3 | 3350 GB/s | ~990 TFLOPS | 900 GB/s | 数据中心 |
+| **H20** | Hopper (GH100) | **~60** | 96GB HBM3 | **4000 GB/s** | **~448 TFLOPS** | **900 GB/s** | **中国特供** |
+| B200 | Blackwell (GB202) | 192 | 192GB HBM3e | 8000 GB/s | ~4500 TFLOPS | 1800 GB/s | 下一代旗舰 |
+
+### 4.5 中国特供卡的设计逻辑
+
+H20、L20 等中国特供卡受美国出口管制，但“闲割”策略不同：
+
+| 型号 | 原版 | 闲割策略 | 保留了什么 |
+|------|------|---------|------------|
+| **H20** | H100 | 闲割 SM（132→~60），算力大减 | HBM3 带宽(4TB/s)、NVLink(900GB/s)、大显存(96GB) |
+| **L20** | L40S/L40 | 闲割 SM、降频率 | GDDR6 显存容量(48GB) |
+
+**H20 的设计定位是“大模型推理卡”**：算力被砍了，但显存带宽和互联保留了 H100 的顶级规格。这意味着：
+- 适合大模型推理/长序列场景（吃显存带宽，不吃算力）
+- 不适合小模型训练（小模型用不到大带宽，反而因 SM 少而慢）
+
+### 4.6 为什么小模型用大卡是浪费
+
+以 mini_gpt（embed=256, 10层, ~25M参数）在 H20 上为例：
+
+```
+每个 step 的 FLOPs ≈ 6 × 参数量 × batch_tokens
+                 = 6 × 25M × (32 × 128)
+                 ≈ 600 GFLOPs
+
+H20 理论算力 448 TFLOPS，利用率 ≈ 600G / 448T ≈ 0.13%
+```
+
+就像用卡车拉一箱快递——严重大材小用。小模型在 L20 上可能更快，因为 L20 的 SM 数量更多（~142 vs ~60），小矩阵调度更充分。
+
+**真正能打满 GPU 算力的条件**：
+- 大模型（参数量 > 1B）
+- 大 batch size（> 256）
+- 长序列（seq_len > 1024）
+- AMP 混合精度（触发 Tensor Core）
+
+### 4.7 驱动层查询算力信息
+
+```bash
+# 查看 GPU 计算能力（compute capability）
+nvidia-smi --query-gpu=name,compute_cap --format=csv
+
+# 查看 SM 数量和每个 SM 的核心数
+nvidia-smi -q -d TOPOLOGY | grep -i "sm"
+
+# 通过 CUDA 查询详细算力参数
+python -c "
+import torch
+dev = torch.cuda.get_device_properties(0)
+print(f'GPU: {dev.name}')
+print(f'SM 数量: {dev.multi_processor_count}')
+print(f'每 SM CUDA Core: 128 (Hopper) / 128 (Ada)')
+print(f'每 SM Tensor Core: 4')
+print(f'显存: {dev.total_mem / 1024**3:.1f} GB')
+print(f'计算能力: {dev.major}.{dev.minor}')
+"
+```
 
 
 

@@ -100,7 +100,127 @@ Flash Attention 分两个部分：
 
 ---
 
-## 五、待学习
+## 五、SDPA —— PyTorch 中使用 Flash Attention 的统一入口
+
+> 学习日期：2026-07-07  
+> 背景：手写 attention 无法触发 Flash Attention / Tensor Core，导致训练利用率低
+
+### 5.1 SDPA 是什么
+
+**SDPA（Scaled Dot-Product Attention）** 是 PyTorch 2.0+ 提供的统一 attention API：
+
+```python
+# 手写 attention（3 个独立 kernel launch）
+attn = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(d_k)
+attn = torch.softmax(attn, dim=-1)
+output = torch.matmul(attn, V)
+
+# SDPA（1 个函数调用，PyTorch 自动选最优实现）
+output = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
+```
+
+### 5.2 SDPA 背后的 3 个 Backend
+
+SDPA 不是单一实现，而是一个**调度器**，根据输入自动选择最快的后端：
+
+| Backend | 特点 | 触发条件 |
+|---------|------|----------|
+| **Flash Attention** | Tiling 分块，S/P 不落 HBM，速度最快 | 4D 输入 + FP16/BF16 + head_dim ≤ 256 |
+| **Memory Efficient** | xFormers，减少显存但速度略慢于 Flash | 4D 输入，不满足 Flash 条件时 |
+| **Math** | 退化为和手写一样的朴素实现 | 3D 输入或不满足上面条件时 |
+
+**关键规则：必须传入 4D 张量才能触发 Flash Attention。**
+
+```python
+# ✅ 正确：4D [batch, num_heads, seq_len, head_dim]
+Q = torch.randn(batch, num_heads, seq_len, head_dim)
+output = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
+# → Flash Attention backend，Tensor Core 参与，S/P 不落 HBM
+
+# ❌ 错误：3D [batch, seq_len, dim]
+Q = torch.randn(batch, seq_len, dim)
+output = F.scaled_dot_product_attention(Q, K, V)
+# → Math backend，和手写完全一样慢
+```
+
+### 5.3 手写 vs SDPA 的对比
+
+| 维度 | 手写 attention | SDPA (Flash Attention) |
+|------|---------------|----------------------|
+| kernel launch 次数 | 3 次（QK^T、softmax、×V） | 1 次（融合） |
+| 中间矩阵 S/P | 写入 HBM → 再读回 | **从不落 HBM**（Tiling） |
+| Tensor Core | 小矩阵不触发 | 更容易触发（融合 kernel） |
+| 显存占用 | 存 N×N 的 S/P 矩阵 | 不存 S/P，省 O(N²) 显存 |
+| 速度 | 基准 | **2-6 倍加速**（seq_len 越大越显著） |
+| mask 方式 | 手动构造 mask 矩阵 | `is_causal=True` 自动处理 |
+
+### 5.4 手写 attention 为什么不触发 Flash Attention
+
+手写是 3 个独立操作：
+```python
+attn = torch.matmul(q, k.T) / sqrt(d_k)  # 第 1 个 kernel
+attn = torch.softmax(attn, dim=-1)        # 第 2 个 kernel
+out = torch.matmul(attn, v)               # 第 3 个 kernel
+```
+
+每个操作独立 launch kernel，S/P 矩阵必须写入 HBM 给下一个操作读。PyTorch 无法把 3 个独立操作融合成 Flash Attention 的 Tiling 模式。
+
+**SDPA 是一个原子操作**，PyTorch 知道完整计算流程，才能用 Tiling 在 SRAM 里完成全部计算。
+
+### 5.5 查看当前使用的 Backend
+
+```python
+import torch
+
+# 查看可用 backend
+torch.backends.cuda.sdp_kernel(
+    enable_flash=True,
+    enable_math=True,
+    enable_mem_efficient=True
+)
+
+# 使用 context 强制指定 backend（调试用）
+with torch.backends.cuda.sdp_kernel(enable_flash=True, enable_math=False, enable_mem_efficient=False):
+    output = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
+    # 如果报错，说明当前输入不满足 Flash Attention 条件
+```
+
+### 5.6 从手写 attention 迁移到 SDPA 的要点
+
+```python
+# ═══════ 手写版本（保留理解价值） ═══════
+def naive_attention(q, k, v, mask=None):
+    """
+    手写 attention：理解原理用
+    q, k, v: (batch, num_heads, seq_len, head_dim)
+    """
+    d_k = q.size(-1)
+    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
+    if mask is not None:
+        scores = scores.masked_fill(mask == 0, float('-inf'))
+    attn_weights = torch.softmax(scores, dim=-1)
+    return torch.matmul(attn_weights, v)
+
+
+# ═══════ SDPA 版本（生产训练用） ═══════
+def sdpa_attention(q, k, v):
+    """
+    SDPA attention：触发 Flash Attention + Tensor Core
+    q, k, v: (batch, num_heads, seq_len, head_dim)  ← 必须 4D
+    """
+    return F.scaled_dot_product_attention(q, k, v, is_causal=True)
+    # is_causal=True 自动应用 causal mask，不需要手动构造
+```
+
+**迁移注意事项**：
+- Q/K/V 必须是 **4D 张量** `[batch, num_heads, seq_len, head_dim]`
+- 不需要手动缩放 `÷ √d_k`，SDPA 内部自动处理
+- `is_causal=True` 替代手动构造下三角 mask
+- 不需要手动 softmax，SDPA 内部融合
+
+---
+
+## 六、待学习
 
 - [ ] Online Softmax：分块计算时如何正确算出 softmax（不需要全局最大值）
   - 核心：维护 running max `m` 和 running sum `l` 两个跑动变量
@@ -108,7 +228,7 @@ Flash Attention 分两个部分：
 
 ---
 
-## 六、关键问答记录
+## 七、关键问答记录
 
 **Q：Flash Attention 减少的是训练反向传播的耗时吗？**  
 A：不完全是。提速主要来自前向传播的 Tiling（训练和推理都有）。反向传播的 Recompute 主要是省显存，时间上有轻微代价（多算一遍），但 IO 节省更多，综合仍有收益。
