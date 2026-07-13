@@ -11,6 +11,7 @@ from app.models.ai_usage import AIUsageCounter  # noqa: F401
 from app.models.ai_call_log import AICallLog  # noqa: F401
 from app.models.analysis import Analysis  # noqa: F401
 from app.models.chat_message import ChatMessage  # noqa: F401
+from app.models.patch_lineage import PatchLineage, PatchLineageSnapshot  # noqa: F401
 
 __all__ = [
     "Base",
@@ -20,4 +21,6 @@ __all__ = [
     "AICallLog",
     "Analysis",
     "ChatMessage",
+    "PatchLineage",
+    "PatchLineageSnapshot",
 ]

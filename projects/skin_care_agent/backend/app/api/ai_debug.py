@@ -188,61 +188,61 @@ class LogDetailOut(BaseModel):
     created_at: datetime
 
 
-def _log_to_row(l: AICallLog, preview_len: int = 200) -> LogRowOut:
+def _log_to_row(log: AICallLog, preview_len: int = 200) -> LogRowOut:
     text = None
-    if l.raw_response and isinstance(l.raw_response, dict):
-        t = l.raw_response.get("text")
+    if log.raw_response and isinstance(log.raw_response, dict):
+        t = log.raw_response.get("text")
         if isinstance(t, str):
             text = t[:preview_len] if preview_len > 0 else t
-    vw = l.validation_warnings or {}
+    vw = log.validation_warnings or {}
     return LogRowOut(
-        id=l.id,
-        trace_id=l.trace_id,
-        attempt_seq=l.attempt_seq,
-        kind=l.kind,
-        status=l.status,
-        provider=l.provider,
-        model=l.model,
-        input_tokens=l.input_tokens,
-        output_tokens=l.output_tokens,
-        latency_ms=l.latency_ms,
-        parse_strategy=l.parse_strategy,
-        has_reasoning=bool(l.reasoning_text),
-        compliance_hit_count=len(l.compliance_flags or []),
-        schema_error_count=len(l.schema_errors or []),
+        id=log.id,
+        trace_id=log.trace_id,
+        attempt_seq=log.attempt_seq,
+        kind=log.kind,
+        status=log.status,
+        provider=log.provider,
+        model=log.model,
+        input_tokens=log.input_tokens,
+        output_tokens=log.output_tokens,
+        latency_ms=log.latency_ms,
+        parse_strategy=log.parse_strategy,
+        has_reasoning=bool(log.reasoning_text),
+        compliance_hit_count=len(log.compliance_flags or []),
+        schema_error_count=len(log.schema_errors or []),
         validation_warning_count=len(vw.get("warnings", []) if isinstance(vw, dict) else []),
         needs_doctor_adjusted=bool(
             isinstance(vw, dict) and vw.get("needs_doctor_adjusted", False)
         ),
-        error_message=l.error_message,
-        created_at=l.created_at,
+        error_message=log.error_message,
+        created_at=log.created_at,
         text_preview=text,
     )
 
 
-def _log_to_detail(l: AICallLog) -> LogDetailOut:
+def _log_to_detail(log: AICallLog) -> LogDetailOut:
     return LogDetailOut(
-        id=l.id,
-        trace_id=l.trace_id,
-        attempt_seq=l.attempt_seq,
-        user_id=l.user_id,
-        kind=l.kind,
-        status=l.status,
-        provider=l.provider,
-        model=l.model,
-        input_meta=l.input_meta or {},
-        request_payload=l.request_payload,
-        raw_response=l.raw_response,
-        reasoning_text=l.reasoning_text,
-        parse_strategy=l.parse_strategy,
-        schema_errors=l.schema_errors,
-        compliance_flags=l.compliance_flags,
-        validation_warnings=l.validation_warnings,
-        error_message=l.error_message,
-        input_tokens=l.input_tokens,
-        output_tokens=l.output_tokens,
-        latency_ms=l.latency_ms,
-        created_at=l.created_at,
+        id=log.id,
+        trace_id=log.trace_id,
+        attempt_seq=log.attempt_seq,
+        user_id=log.user_id,
+        kind=log.kind,
+        status=log.status,
+        provider=log.provider,
+        model=log.model,
+        input_meta=log.input_meta or {},
+        request_payload=log.request_payload,
+        raw_response=log.raw_response,
+        reasoning_text=log.reasoning_text,
+        parse_strategy=log.parse_strategy,
+        schema_errors=log.schema_errors,
+        compliance_flags=log.compliance_flags,
+        validation_warnings=log.validation_warnings,
+        error_message=log.error_message,
+        input_tokens=log.input_tokens,
+        output_tokens=log.output_tokens,
+        latency_ms=log.latency_ms,
+        created_at=log.created_at,
     )
 
 
@@ -264,34 +264,34 @@ def list_logs(
     if provider:
         q = q.filter(AICallLog.provider == provider)
     rows = q.order_by(AICallLog.id.desc()).limit(limit).all()
-    return [_log_to_row(l, preview_len=preview_len) for l in rows]
+    return [_log_to_row(log, preview_len=preview_len) for log in rows]
 
 
 @router.get("/debug/logs/{log_id}", response_model=LogDetailOut)
 def get_log(log_id: int, db: Session = Depends(get_db)) -> LogDetailOut:
     """完整详情：input_meta / request_payload / raw_response / reasoning_text 全部返回。"""
-    l = db.get(AICallLog, log_id)
-    if l is None or l.deleted_at is not None:
+    log = db.get(AICallLog, log_id)
+    if log is None or log.deleted_at is not None:
         raise HTTPException(status_code=404, detail="log not found")
-    return _log_to_detail(l)
+    return _log_to_detail(log)
 
 
 @router.get("/debug/logs/{log_id}/raw-text", response_class=JSONResponse)
 def get_log_raw_text(log_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
     """LLM 原文（response text + reasoning）。大文本，独立端点方便复制。"""
-    l = db.get(AICallLog, log_id)
-    if l is None or l.deleted_at is not None:
+    log = db.get(AICallLog, log_id)
+    if log is None or log.deleted_at is not None:
         raise HTTPException(status_code=404, detail="log not found")
     text = None
-    if l.raw_response and isinstance(l.raw_response, dict):
-        text = l.raw_response.get("text")
+    if log.raw_response and isinstance(log.raw_response, dict):
+        text = log.raw_response.get("text")
     return {
-        "log_id": l.id,
-        "provider": l.provider,
-        "model": l.model,
-        "status": l.status,
-        "parse_strategy": l.parse_strategy,
-        "reasoning_text": l.reasoning_text,
+        "log_id": log.id,
+        "provider": log.provider,
+        "model": log.model,
+        "status": log.status,
+        "parse_strategy": log.parse_strategy,
+        "reasoning_text": log.reasoning_text,
         "text": text,
         "text_length": len(text) if isinstance(text, str) else 0,
     }
@@ -312,4 +312,4 @@ def get_trace(
     )
     if not rows:
         raise HTTPException(status_code=404, detail="trace not found")
-    return [_log_to_row(l, preview_len=preview_len) for l in rows]
+    return [_log_to_row(log, preview_len=preview_len) for log in rows]

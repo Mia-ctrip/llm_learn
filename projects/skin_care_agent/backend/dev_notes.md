@@ -806,6 +806,121 @@ SELECT provider, COUNT(*) FROM chat_messages GROUP BY provider;
 - Task #7：趋势/日记/用药 + 小程序对接
 - Task #8：合规收尾（免责声明 + checkNeedDoctor 前端提示）
 
+---
+
+### Step #6 — vision.tracker（跨日 patch lineage 追踪 + 趋势 API）
+
+#### 我做了什么
+
+**新增文件**：
+- `models/patch_lineage.py`：PatchLineage（主线）+ PatchLineageSnapshot（每次分析的快照）
+- `db/migrations/versions/0008_lineages.py`
+- `services/vision/tracker.py`：匹配算法 + 生命周期状态迁移
+- `schemas/lineage.py` + `schemas/trend.py`
+- `api/lineages.py`：`GET /lineages` / `GET /lineages/{id}` / `GET /lineages/by-photo/{photo_id}`
+- `api/trends.py`：`GET /trends/summary?days=N`
+
+**改造文件**：
+- `services/analysis_service.py`：analysis 落库后自动调用 tracker（try/except 包住，tracker 挂不影响 /analyses 200）
+- `models/__init__.py`：注册两张新表
+- `main.py`：挂载 lineages + trends router
+
+#### 关键设计决策
+
+**1. 一个 region 可有多条 lineage（Q1=B）**
+- 右颊今天 2 个 patch → 一个匹配昨天已有 lineage，另一个新建
+- 每条 lineage 是"一片持续存在的病灶群"
+- 状态 active / dormant（1-14 天没出现）/ healed（>14 天没出现，不再自动接续）
+
+**2. 只做 patch lineage，point 不追踪（Q2=A）**
+- point 是"轻度可枚举"的锦上添花，产品价值主要在 patch
+- MVP 阶段减少一半工作量
+- 未来把 point 当 sparse+1颗的特殊 patch 统一处理即可
+
+**3. 简单匹配算法（Q3=A）**
+- 同 region 内 bbox 中心欧氏距离最小的作为候选
+- 距离 <= 0.25（归一化后约占面部宽度 25%）→ 匹配
+- 否则新建 lineage
+- 每条 lineage 一次分析最多匹配一次
+- 匹配元信息落 `match_info` JSONB（distance / threshold / reason）供排障
+
+**4. Tracker 挂在 analysis_service 内联跑，不异步**
+- MVP 阶段一次分析已经 5-10s，再多 100ms 追踪无所谓
+- 失败被 try/except 兜住 → analysis 依然成功返回
+
+**5. 冗余字段设计**
+- Snapshot 冗余存 bbox/coverage/type/count/severity
+- 避免每次读 lineage 都要 join analyses 表抽 JSONB
+
+**6. 趋势 API 合并两条数据源**
+- Analyses → 皮肤指数曲线 + severity 趋势 + 每日总痘数
+- Lineages → 活跃/新增/消退区域数 + 分区域摘要
+- Highlights 用规则生成人话洞察
+
+#### 你需要操作什么
+
+**1. 跑迁移**
+```bash
+alembic upgrade head
+# Running upgrade 0007_chat_messages -> 0008_lineages
+```
+
+**2. 重启 uvicorn**
+
+**3. 验证追踪能力（同照片两次 force=true 分析模拟跨日）**
+
+```bash
+curl -X POST http://localhost:8000/analyses -d '{"photo_id": <id>, "force": true}'
+curl -X POST http://localhost:8000/analyses -d '{"photo_id": <id>, "force": true}'
+curl http://localhost:8000/lineages
+# 每个 patch 应该有 2 个 snapshot
+```
+
+**4. Debug API**
+
+```bash
+curl http://localhost:8000/lineages                        # 列所有
+curl "http://localhost:8000/lineages?status=active"        # 筛选
+curl "http://localhost:8000/lineages?region=right_cheek"
+curl http://localhost:8000/lineages/1                      # 详情 + 时间线
+curl http://localhost:8000/lineages/by-photo/<photo_id>
+curl "http://localhost:8000/trends/summary?days=30"
+```
+
+**5. DBeaver 检查数据**
+
+```sql
+SELECT id, region, status, first_seen_at, last_seen_at, snapshot_count
+FROM patch_lineages ORDER BY id;
+
+SELECT lineage_id, region, coverage, dominant_type,
+       estimated_count, severity, match_info, created_at
+FROM patch_lineage_snapshots ORDER BY lineage_id, created_at;
+
+SELECT region, status, COUNT(*) FROM patch_lineages
+GROUP BY region, status;
+```
+
+**6. 已知遗留 / 未做**
+- 每条 lineage 一次分析只能匹配一次；如果两个 patch 都很靠近旧 lineage，只有一个能匹配上 —— 未来上匈牙利分配
+- healed 判定用 last_seen_at 时间近似；实际上"用户没拍照" vs "拍了但这个 lineage 没出现"没区分
+- 只考虑近 14 天候选；长期用户"两个月前老痘印又发炎"的边缘 case 不 care
+- Point 追踪未做（Q2=A）
+
+#### MVP 主线进度更新
+
+到此**后端 API 层面** 5 大 MVP 功能：
+- ✅ 拍照记录
+- ✅ AI 分析（含跨日追踪 = 护城河）
+- ✅ 趋势追踪（`GET /trends/summary`）
+- ❌ 痘痘日记（还没做）
+- ✅ AI 问答
+
+**剩余后端**：只有痘痘日记未做
+**剩余前端**：全部（微信小程序未开始）
+**剩余合规**：Task #8 收尾
+
+
 
 
 

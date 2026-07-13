@@ -197,7 +197,7 @@ async def send_chat(
     else:
         trace_log.info("chat.compliance.clean")
 
-    success_log = next((l for l in logs if l.status == "success"), logs[-1] if logs else None)
+    success_log = next((log for log in logs if log.status == "success"), logs[-1] if logs else None)
     compliance_flags_json = [
         {
             "field": f.field,
@@ -276,6 +276,6 @@ def _persist_chat_records(
         db.add(log)
         logs.append(log)
     db.commit()
-    for l in logs:
-        db.refresh(l)
+    for log in logs:
+        db.refresh(log)
     return logs

@@ -308,7 +308,7 @@ async def analyze_photo(
         validation_by_seq=validation_by_seq,
         final_status="success",
     )
-    success_log = next((l for l in logs if l.status == "success"), logs[-1])
+    success_log = next((log for log in logs if log.status == "success"), logs[-1])
 
     analysis = Analysis(
         user_id=user_id,
@@ -325,6 +325,23 @@ async def analyze_photo(
     db.commit()
     db.refresh(analysis)
     db.refresh(success_log)
+
+    # 跨日 patch lineage 追踪：tracker 失败不应让 /analyses 500
+    try:
+        from app.services.vision.tracker import track_patches_for_analysis
+
+        track_result = track_patches_for_analysis(db, analysis)
+        trace_log.info(
+            "analyze.tracker.done",
+            analysis_id=analysis.id,
+            new_lineages=track_result.new_lineage_count,
+            matched_lineages=track_result.matched_lineage_count,
+            snapshots=len(track_result.snapshot_ids),
+        )
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        trace_log.error("analyze.tracker.failed", error=str(e)[:500])
+        logger.exception("patch tracker failed for analysis_id=%s", analysis.id)
 
     trace_log.info(
         "analyze.done",
@@ -393,8 +410,8 @@ def _persist_records(
         db.add(log)
         logs.append(log)
     db.commit()
-    for l in logs:
-        db.refresh(l)
+    for log in logs:
+        db.refresh(log)
     trace_log.info(
         "analyze.persist.done",
         rows=len(logs),
