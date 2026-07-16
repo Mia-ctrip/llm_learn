@@ -5,35 +5,31 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.session import get_db
+from app.models.check_in import CheckIn
 from app.models.photo import Photo
-from app.models.user import User
 from app.schemas.photo import PhotoUploadResponse
 from app.services.storage_service import get_storage
+from app.services.user_service import SEED_USER_ID, ensure_seed_user
+from app.services.vision.normalization import normalize_photo_for_analysis
+from app.services.vision.quality import (
+    QualityModelUnavailable,
+    assess_photo_quality,
+)
 
 
 router = APIRouter(prefix="/photos", tags=["photos"])
-
 
 _MIME_TO_EXT = {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
 }
-
-
-def _ensure_seed_user(db: Session) -> User:
-    """MVP 阶段：未接微信登录前，所有请求挂到 user_id=1。"""
-    user = db.get(User, 1)
-    if user is None:
-        user = User(id=1, nickname="dev")
-        db.add(user)
-        db.flush()
-    return user
+_VALID_VIEW_TYPES = {"front", "left", "right"}
 
 
 def _build_storage_key(user_id: int, ext: str, now: datetime) -> str:
@@ -44,6 +40,33 @@ def _build_storage_key(user_id: int, ext: str, now: datetime) -> str:
     )
 
 
+def _validate_check_in_target(
+    db: Session,
+    *,
+    check_in_id: int | None,
+    view_type: str | None,
+) -> CheckIn | None:
+    if check_in_id is None:
+        if view_type is not None:
+            raise HTTPException(status_code=400, detail="view_type requires check_in_id")
+        return None
+    if view_type not in _VALID_VIEW_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "invalid view_type", "allowed": sorted(_VALID_VIEW_TYPES)},
+        )
+    check_in = db.get(CheckIn, check_in_id)
+    if (
+        check_in is None
+        or check_in.deleted_at is not None
+        or check_in.user_id != SEED_USER_ID
+    ):
+        raise HTTPException(status_code=404, detail="check-in not found")
+    if check_in.status != "draft":
+        raise HTTPException(status_code=409, detail="completed check-in cannot accept photos")
+    return check_in
+
+
 @router.post(
     "",
     response_model=PhotoUploadResponse,
@@ -52,9 +75,12 @@ def _build_storage_key(user_id: int, ext: str, now: datetime) -> str:
 async def upload_photo(
     file: UploadFile = File(...),
     taken_at: datetime | None = Form(default=None),
+    check_in_id: int | None = Form(default=None),
+    view_type: str | None = Form(default=None),
     db: Session = Depends(get_db),
-):
+) -> PhotoUploadResponse:
     settings = get_settings()
+    _validate_check_in_target(db, check_in_id=check_in_id, view_type=view_type)
 
     if file.content_type not in settings.allowed_mime_set:
         raise HTTPException(
@@ -75,22 +101,79 @@ async def upload_photo(
         with Image.open(io.BytesIO(data)) as img:
             img.verify()
         with Image.open(io.BytesIO(data)) as img:
-            width, height = img.size
+            width, height = ImageOps.exif_transpose(img).size
     except (UnidentifiedImageError, OSError) as e:
         raise HTTPException(status_code=400, detail=f"invalid image: {e}") from e
 
-    user = _ensure_seed_user(db)
+    quality_result = None
+    normalized_photo = None
+    quality_meta = None
+    if check_in_id is not None:
+        try:
+            quality_result = assess_photo_quality(data, view_type=view_type)
+        except QualityModelUnavailable as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "message": "photo quality model unavailable",
+                    "error": str(e),
+                },
+            ) from e
+        if not quality_result.passed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "message": "photo quality check failed",
+                    "errors": list(quality_result.errors),
+                    "quality_meta": quality_result.to_meta(),
+                },
+            )
+        normalized_photo = normalize_photo_for_analysis(data, quality_result)
+        quality_meta = quality_result.to_meta()
+        quality_meta["normalization"] = normalized_photo.to_meta()
 
+    user = ensure_seed_user(db)
     now = datetime.now(tz=timezone.utc)
     ext = _MIME_TO_EXT[file.content_type]
     key = _build_storage_key(user.id, ext, now)
+    processed_key = (
+        f"{key.rsplit('.', 1)[0]}.normalized.jpg" if normalized_photo else None
+    )
+
+    if check_in_id is not None and view_type is not None:
+        existing = (
+            db.query(Photo)
+            .filter(
+                Photo.check_in_id == check_in_id,
+                Photo.view_type == view_type,
+                Photo.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if existing is not None:
+            existing.deleted_at = now
+            db.flush()
 
     storage = get_storage()
-    storage.put(key, data, file.content_type)
+    try:
+        storage.put(key, data, file.content_type)
+        if normalized_photo is not None and processed_key is not None:
+            storage.put(processed_key, normalized_photo.data, "image/jpeg")
+    except Exception:
+        db.rollback()
+        storage.delete(key)
+        if processed_key is not None:
+            storage.delete(processed_key)
+        raise
 
     photo = Photo(
         user_id=user.id,
+        check_in_id=check_in_id,
+        view_type=view_type,
+        quality_status=quality_result.status if quality_result else None,
+        quality_meta=quality_meta,
         storage_key=key,
+        processed_storage_key=processed_key,
         mime_type=file.content_type,
         size_bytes=len(data),
         width=width,
@@ -98,13 +181,23 @@ async def upload_photo(
         taken_at=taken_at,
     )
     db.add(photo)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.delete(key)
+        if processed_key is not None:
+            storage.delete(processed_key)
+        raise
     db.refresh(photo)
 
     signed = storage.signed_url(key)
-
     return PhotoUploadResponse(
         photo_id=photo.id,
+        check_in_id=photo.check_in_id,
+        view_type=photo.view_type,
+        quality_status=photo.quality_status,
+        quality_meta=photo.quality_meta,
         storage_key=photo.storage_key,
         mime_type=photo.mime_type,
         size_bytes=photo.size_bytes,

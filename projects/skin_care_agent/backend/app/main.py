@@ -6,8 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import ai_debug, analyses, chat, files, health, lineages, photos, trends
+from app.api import ai_debug, analyses, chat, check_ins, files, health, lineages, photos, trends
 from app.config import get_settings
+from app.services.vision.quality import close_quality_model
 
 
 settings = get_settings()
@@ -22,8 +23,11 @@ logger = logging.getLogger("skin_care_agent")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("App starting up. env=%s", settings.app_env)
-    yield
-    logger.info("App shutting down.")
+    try:
+        yield
+    finally:
+        close_quality_model()
+        logger.info("App shutting down.")
 
 
 def create_app() -> FastAPI:
@@ -43,6 +47,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(photos.router)
+    app.include_router(check_ins.router)
     app.include_router(files.router)
     app.include_router(analyses.router)
     app.include_router(chat.router)

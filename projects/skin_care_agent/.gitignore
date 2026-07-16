@@ -25,3 +25,6 @@ Thumbs.db
 
 # 日志
 *.log
+
+# 本地视觉模型资产（按 backend/dev_notes.md 下载）
+backend/model_assets/

@@ -1,26 +1,125 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.analysis import Analysis
+from app.models.check_in import CheckIn
 from app.models.patch_lineage import PatchLineage, PatchLineageSnapshot
+from app.models.photo import Photo
+from app.schemas.check_in import CheckInAnalysisSummaryOut
 from app.schemas.trend import DailyPoint, RegionSummary, TrendSummaryOut
 from app.services.ai_gateway.schema import REGION_ZH
+from app.services.check_in_aggregation import (
+    analysis_region_counts,
+    analysis_total_count,
+    load_check_in_summaries,
+    load_latest_analyses,
+)
 
 
 router = APIRouter(prefix="/trends", tags=["trends"])
 
-
 _SEED_USER_ID = 1
+_VIEW_ZH = {"front": "正面", "left": "左侧", "right": "右侧"}
+
+
+@dataclass(frozen=True)
+class _LegacyRecord:
+    day: date
+    photo_id: int
+    recorded_at: datetime
+    analysis: Analysis
 
 
 def _today_utc() -> date:
     return datetime.now(tz=timezone.utc).date()
+
+
+def _select_daily_check_in_summaries(
+    summaries: list[CheckInAnalysisSummaryOut],
+) -> tuple[dict[date, CheckInAnalysisSummaryOut], int, int]:
+    """每天只选一条；完整 standard 优先，其次取最新聚合。"""
+
+    ready = [row for row in summaries if row.aggregation_status == "ready"]
+    selected: dict[date, CheckInAnalysisSummaryOut] = {}
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    for row in ready:
+        current = selected.get(row.observed_on)
+        candidate_key = (
+            row.kind == "standard",
+            row.latest_analysis_at or epoch,
+            row.check_in_id,
+        )
+        if current is None:
+            selected[row.observed_on] = row
+            continue
+        current_key = (
+            current.kind == "standard",
+            current.latest_analysis_at or epoch,
+            current.check_in_id,
+        )
+        if candidate_key > current_key:
+            selected[row.observed_on] = row
+
+    incomplete = sum(row.aggregation_status != "ready" for row in summaries)
+    superseded = len(ready) - len(selected)
+    return selected, incomplete, superseded
+
+
+def _photo_recorded_at(photo: Photo) -> datetime:
+    recorded_at = photo.taken_at or photo.created_at
+    if recorded_at.tzinfo is None:
+        return recorded_at.replace(tzinfo=timezone.utc)
+    return recorded_at.astimezone(timezone.utc)
+
+
+def _load_legacy_daily_records(
+    db: Session,
+    *,
+    start_dt: datetime,
+    end_dt: datetime,
+) -> dict[date, _LegacyRecord]:
+    """旧照片没有 check-in；按照片记录日期去重，同日只保留最新一张。"""
+
+    recorded_at = func.coalesce(Photo.taken_at, Photo.created_at)
+    photos = list(
+        db.execute(
+            select(Photo).where(
+                Photo.user_id == _SEED_USER_ID,
+                Photo.check_in_id.is_(None),
+                Photo.deleted_at.is_(None),
+                recorded_at >= start_dt,
+                recorded_at <= end_dt,
+            )
+        ).scalars()
+    )
+    latest_by_photo = load_latest_analyses(db, [photo.id for photo in photos])
+    selected: dict[date, _LegacyRecord] = {}
+    for photo in photos:
+        analysis = latest_by_photo.get(photo.id)
+        if analysis is None:
+            continue
+        photo_recorded_at = _photo_recorded_at(photo)
+        candidate = _LegacyRecord(
+            day=photo_recorded_at.date(),
+            photo_id=photo.id,
+            recorded_at=photo_recorded_at,
+            analysis=analysis,
+        )
+        current = selected.get(candidate.day)
+        if current is None or (candidate.recorded_at, candidate.photo_id) > (
+            current.recorded_at,
+            current.photo_id,
+        ):
+            selected[candidate.day] = candidate
+    return selected
 
 
 @router.get("/summary", response_model=TrendSummaryOut)
@@ -28,67 +127,77 @@ def trend_summary(
     days: int = Query(default=30, ge=1, le=365),
     db: Session = Depends(get_db),
 ) -> TrendSummaryOut:
-    """当前用户在最近 N 天的趋势总览。
-
-    合并 analyses（皮肤指数曲线）+ lineages（区域生命周期）两条数据源。
-    """
+    """当前用户在最近 N 天的分析曲线与痘斑生命周期总览。"""
     end_date = _today_utc()
     start_date = end_date - timedelta(days=days - 1)
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
 
-    # 1. Analyses 日聚合
-    analyses = list(
+    check_ins = list(
         db.execute(
-            select(Analysis)
+            select(CheckIn)
             .where(
-                Analysis.user_id == _SEED_USER_ID,
-                Analysis.deleted_at.is_(None),
-                Analysis.created_at >= start_dt,
-                Analysis.created_at <= end_dt,
+                CheckIn.user_id == _SEED_USER_ID,
+                CheckIn.status == "complete",
+                CheckIn.deleted_at.is_(None),
+                CheckIn.observed_on >= start_date,
+                CheckIn.observed_on <= end_date,
             )
-            .order_by(Analysis.created_at.asc())
+            .order_by(CheckIn.observed_on, CheckIn.id)
         ).scalars()
     )
-
-    by_day: dict[date, list[Analysis]] = defaultdict(list)
-    for a in analyses:
-        d = a.created_at.astimezone(timezone.utc).date()
-        by_day[d].append(a)
+    check_in_summaries = load_check_in_summaries(db, check_ins)
+    check_ins_by_day, incomplete_check_ins, superseded_check_ins = _select_daily_check_in_summaries(
+        check_in_summaries
+    )
+    legacy_by_day = _load_legacy_daily_records(
+        db,
+        start_dt=start_dt,
+        end_dt=end_dt,
+    )
 
     daily_points: list[DailyPoint] = []
-    cur = start_date
-    while cur <= end_date:
-        rows = by_day.get(cur, [])
-        if rows:
-            sev_vals = [r.overall_severity for r in rows if r.overall_severity is not None]
-            idx_vals = [r.skin_health_index for r in rows if r.skin_health_index is not None]
-            total_count = 0
-            for r in rows:
-                patches = (r.parsed_result or {}).get("acne_patches") or []
-                total_count += sum(int(p.get("estimated_count") or 0) for p in patches)
+    current_day = start_date
+    while current_day <= end_date:
+        check_in_summary = check_ins_by_day.get(current_day)
+        if check_in_summary is not None:
             daily_points.append(
                 DailyPoint(
-                    day=cur,
-                    overall_severity=(sum(sev_vals) / len(sev_vals)) if sev_vals else None,
-                    skin_health_index=(sum(idx_vals) / len(idx_vals)) if idx_vals else None,
-                    total_estimated_count=total_count,
-                    analysis_count=len(rows),
+                    day=current_day,
+                    source="check_in",
+                    check_in_id=check_in_summary.check_in_id,
+                    overall_severity=check_in_summary.overall_severity,
+                    skin_health_index=check_in_summary.skin_health_index,
+                    total_estimated_count=check_in_summary.total_estimated_count,
+                    analysis_count=check_in_summary.analyzed_view_count,
+                    check_in_count=1,
                 )
             )
         else:
-            daily_points.append(
-                DailyPoint(
-                    day=cur,
-                    overall_severity=None,
-                    skin_health_index=None,
-                    total_estimated_count=0,
-                    analysis_count=0,
+            legacy = legacy_by_day.get(current_day)
+            if legacy is None:
+                daily_points.append(DailyPoint(day=current_day))
+            else:
+                region_counts = analysis_region_counts(legacy.analysis.parsed_result)
+                daily_points.append(
+                    DailyPoint(
+                        day=current_day,
+                        source="legacy",
+                        overall_severity=legacy.analysis.overall_severity,
+                        skin_health_index=legacy.analysis.skin_health_index,
+                        total_estimated_count=analysis_total_count(
+                            legacy.analysis.parsed_result,
+                            region_counts,
+                        ),
+                        analysis_count=1,
+                    )
                 )
-            )
-        cur += timedelta(days=1)
+        current_day += timedelta(days=1)
 
-    # 2. Lineage 统计
+    total_analyses = sum(point.analysis_count for point in daily_points)
+    total_check_ins = sum(point.check_in_count for point in daily_points)
+    total_legacy_records = sum(point.source == "legacy" for point in daily_points)
+
     lineages = list(
         db.execute(
             select(PatchLineage).where(
@@ -97,55 +206,58 @@ def trend_summary(
             )
         ).scalars()
     )
-
     total_active = sum(1 for lineage in lineages if lineage.status == "active")
-    total_new_in_range = sum(1 for lineage in lineages if lineage.first_seen_at >= start_dt)
-    # healed_at 我们没单独记，用 status=healed 且 last_seen_at 在窗口内近似
+    total_new_in_range = sum(1 for lineage in lineages if lineage.first_seen_on >= start_date)
     total_healed_in_range = sum(
-        1 for lineage in lineages if lineage.status == "healed" and lineage.last_seen_at >= start_dt
+        1
+        for lineage in lineages
+        if lineage.status == "healed" and lineage.last_observed_on >= start_date
     )
 
-    # 按 region 分组
-    region_groups: dict[str, list[PatchLineage]] = defaultdict(list)
+    region_groups: dict[tuple[str, str], list[PatchLineage]] = defaultdict(list)
     for lineage in lineages:
-        region_groups[lineage.region].append(lineage)
+        region_groups[(lineage.view_type, lineage.region)].append(lineage)
 
-    # 拿每 region 的 latest snapshot 用于展示 dominant_type/coverage
     all_ids = [lineage.id for lineage in lineages]
     latest_by_lineage: dict[int, PatchLineageSnapshot] = {}
     if all_ids:
-        for snap in db.execute(
+        snapshots = db.execute(
             select(PatchLineageSnapshot)
             .where(PatchLineageSnapshot.lineage_id.in_(all_ids))
             .order_by(
                 PatchLineageSnapshot.lineage_id,
+                PatchLineageSnapshot.observed_on.desc(),
                 PatchLineageSnapshot.created_at.desc(),
+                PatchLineageSnapshot.id.desc(),
             )
-        ).scalars():
-            if snap.lineage_id not in latest_by_lineage:
-                latest_by_lineage[snap.lineage_id] = snap
+        ).scalars()
+        for snapshot in snapshots:
+            if snapshot.lineage_id not in latest_by_lineage:
+                latest_by_lineage[snapshot.lineage_id] = snapshot
 
     region_summaries: list[RegionSummary] = []
-    for region, group in region_groups.items():
+    for (view_type, region), group in region_groups.items():
         active = [lineage for lineage in group if lineage.status == "active"]
         dormant = [lineage for lineage in group if lineage.status == "dormant"]
         healed = [lineage for lineage in group if lineage.status == "healed"]
-        # 最新 snapshot：group 里 last_seen_at 最大的 lineage 的 latest snap
-        latest_lineage = max(group, key=lambda lineage: lineage.last_seen_at)
-        latest_snap = latest_by_lineage.get(latest_lineage.id)
+        latest_lineage = max(
+            group,
+            key=lambda lineage: (lineage.last_observed_on, lineage.id),
+        )
+        latest_snapshot = latest_by_lineage.get(latest_lineage.id)
         region_summaries.append(
             RegionSummary(
+                view_type=view_type,
                 region=region,
                 active_lineage_count=len(active),
                 dormant_lineage_count=len(dormant),
                 healed_lineage_count=len(healed),
-                latest_dominant_type=latest_snap.dominant_type if latest_snap else None,
-                latest_coverage=latest_snap.coverage if latest_snap else None,
+                latest_dominant_type=(latest_snapshot.dominant_type if latest_snapshot else None),
+                latest_coverage=(latest_snapshot.coverage if latest_snapshot else None),
             )
         )
-    region_summaries.sort(key=lambda r: -r.active_lineage_count)
+    region_summaries.sort(key=lambda row: -row.active_lineage_count)
 
-    # 3. Highlights：给用户看的一句话洞察
     highlights = _build_highlights(
         daily_points=daily_points,
         total_new=total_new_in_range,
@@ -153,12 +265,15 @@ def trend_summary(
         region_summaries=region_summaries,
         days=days,
     )
-
     return TrendSummaryOut(
         range_days=days,
         start_date=start_date,
         end_date=end_date,
-        total_analyses=len(analyses),
+        total_analyses=total_analyses,
+        total_check_ins=total_check_ins,
+        incomplete_check_ins=incomplete_check_ins,
+        superseded_check_ins=superseded_check_ins,
+        total_legacy_records=total_legacy_records,
         total_active_lineages=total_active,
         total_new_lineages_in_range=total_new_in_range,
         total_healed_lineages_in_range=total_healed_in_range,
@@ -177,15 +292,21 @@ def _build_highlights(
     days: int,
 ) -> list[str]:
     out: list[str] = []
-    valid_idx = [p for p in daily_points if p.skin_health_index is not None]
-    if len(valid_idx) >= 2:
-        first_idx = valid_idx[0].skin_health_index or 0
-        last_idx = valid_idx[-1].skin_health_index or 0
-        delta = last_idx - first_idx
+    valid_indices = [point for point in daily_points if point.skin_health_index is not None]
+    if len(valid_indices) >= 2:
+        first_index = valid_indices[0].skin_health_index or 0
+        last_index = valid_indices[-1].skin_health_index or 0
+        delta = last_index - first_index
         if delta >= 5:
-            out.append(f"皮肤指数近 {days} 天上升 {delta:.0f} 分（{first_idx:.0f} → {last_idx:.0f}），趋势向好。")
+            out.append(
+                f"皮肤指数近 {days} 天上升 {delta:.0f} 分"
+                f"（{first_index:.0f} → {last_index:.0f}），趋势向好。"
+            )
         elif delta <= -5:
-            out.append(f"皮肤指数近 {days} 天下降 {abs(delta):.0f} 分（{first_idx:.0f} → {last_idx:.0f}），需要注意护理。")
+            out.append(
+                f"皮肤指数近 {days} 天下降 {abs(delta):.0f} 分"
+                f"（{first_index:.0f} → {last_index:.0f}），需要注意护理。"
+            )
         else:
             out.append(f"皮肤指数在 {days} 天内保持稳定（波动 {delta:+.0f} 分）。")
 
@@ -197,9 +318,11 @@ def _build_highlights(
     if region_summaries:
         top = region_summaries[0]
         if top.active_lineage_count > 0:
-            zh = REGION_ZH.get(top.region, top.region)
+            region_zh = REGION_ZH.get(top.region, top.region)
+            view_zh = _VIEW_ZH.get(top.view_type)
+            display_region = f"{view_zh}·{region_zh}" if view_zh else region_zh
             out.append(
-                f"当前活跃痘斑最多的区域：{zh}（{top.active_lineage_count} 处活跃）。"
+                f"当前活跃痘斑最多的区域：{display_region}（{top.active_lineage_count} 处活跃）。"
             )
 
     if not out:

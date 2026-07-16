@@ -2,6 +2,18 @@
 
 > 每完成一个可测试小步，追加一段。三段结构：**我做了什么** / **关键设计决策** / **你需要操作什么**。
 > 不是通用文档，是给下一次会话（或未来自己）快速接手用的。
+## 项目路线图（初始规划）
+
+以下是项目最初按产品能力拆分的主线。实际实现过程中，Step 3 已从原计划的 Mock 版调整为真实 LLM gateway 接入，Step #6 的 tracker 也提前完成；后续以本文件各章节的实际状态为准。
+
+1. 基础脚手架：FastAPI、配置、PostgreSQL、Alembic、健康检查
+2. `storage_service` + 照片上传：本地存储、`photos` 表、签名 URL
+3. AI 业务接入：原计划为 Mock 全链路，实际改为真实 LLM、多 Provider 降级、限流、合规和问答
+4. vision 模块：MediaPipe 对齐、眼部打码、标注图渲染（不含 tracker）
+5. 真实视觉 LLM：Qwen-VL 优先，并接入 Provider 降级链
+6. `vision.tracker`：跨日 patch 匹配和生命周期状态机
+7. trends、diary、medications、chat 及小程序对接
+8. 首启免责声明与 `checkNeedDoctor` 规则（合规收尾）
 
 ---
 
@@ -9,21 +21,85 @@
 
 ### 我做了什么
 
-- FastAPI 项目骨架：`app/main.py` / `app/config.py`（pydantic-settings）/ `app/db/session.py` / `app/api/health.py`
-- SQLAlchemy 2.x 基类：`app/models/base.py`（Base / IdMixin / TimestampMixin）
-- Alembic 集成：`alembic.ini` + `app/db/migrations/env.py`
-- User / Photo ORM，初始迁移 `0001_init.py`
-- `.env.example` 全字段样板
+搭起最小可运行的 FastAPI + PostgreSQL 骨架。
+
+- `pyproject.toml` — 依赖声明，分核心 / `[dev]` 两组
+- `app/config.py` — pydantic-settings 读 `.env`，`@lru_cache` 单例
+- `app/db/session.py` — SQLAlchemy `engine` + `SessionLocal` + `get_db()` 依赖
+- `app/models/base.py` — `Base` / `IdMixin`（BigInteger 主键）/ `TimestampMixin`（含软删 `deleted_at`）
+- `app/main.py` — FastAPI factory + CORS + lifespan
+- `app/api/health.py` — `/health`（进程） + `/health/db`（`SELECT 1` 验 PG）
+
+初始项目结构的关键部分：
+
+```text
+skin_care_agent/
+├── .gitignore
+└── backend/
+    ├── pyproject.toml
+    ├── alembic.ini
+    ├── .env.example
+    ├── README.md
+    └── app/
+        ├── main.py
+        ├── config.py
+        ├── api/health.py
+        ├── db/session.py
+        ├── db/migrations/
+        └── models/base.py
+```
+- `app/api/health.py` — `/health`（进程） + `/health/db`（`SELECT 1` 验 PG）
+- `alembic.ini` + `app/db/migrations/env.py` — DB URL 从 settings 注入，避免硬编码
+- `.env.example` — 全部环境变量模板
+- `.gitignore` — 忽略 `.venv` / `.env` / `storage_local/`
 
 ### 关键设计决策
 
+- **PG 不选 MySQL**：为后面 JSONB（日记 tags）/ 数组+GIN（合规审计）/ pgvector（相似图检索）留路。PG License 永久免费，自己装零成本。
+- **`.env` 注入 alembic URL**：alembic.ini 里 `sqlalchemy.url=` 留空，由 `env.py` 从 settings 注入，避免在 git 里漏密钥。
+- **软删而非硬删**：所有业务表带 `deleted_at`，配合"不支持用户删数据"的产品定位。
+- **uv 管理虚拟环境**：`.venv` 落在项目内（`backend/.venv/`），删项目即删环境。
 - **配置全走 pydantic-settings + .env**，不硬编码 key
 - **软删除**：所有业务表带 `deleted_at`，查询时 filter `deleted_at IS NULL`
 - **user_id 用 BigInteger**：为将来接微信 openid 独立表留空间
 
 ### 你需要操作什么
 
-（已完成，无待办）
+（环境初始化已完成；以下是可复现步骤）
+
+```powershell
+cd D:\agent\model\projects\skin_care_agent\backend
+uv venv
+.venv\Scripts\activate
+uv pip install -e ".[dev]"
+copy .env.example .env
+```
+
+编辑 `.env`，至少确认：
+
+```text
+DATABASE_URL=postgresql+psycopg://skin:skin@localhost:5432/skin_care
+```
+
+首次使用前创建 PostgreSQL 16 用户和数据库：
+
+```sql
+CREATE USER skin WITH PASSWORD 'skin';
+CREATE DATABASE skin_care OWNER skin;
+```
+
+然后执行：
+
+```powershell
+alembic upgrade head
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+验证：
+
+- `GET http://localhost:8000/health`：进程存活
+- `GET http://localhost:8000/health/db`：数据库可达
+- `http://localhost:8000/docs`：打开 Swagger 接口页面
 
 ---
 
@@ -31,20 +107,63 @@
 
 ### 我做了什么
 
-- `services/storage_service/`：ABC + LocalStorage + HMAC-SHA256 签名 + factory
-- `POST /photos` multipart 上传，Pillow 二次校验图像 + 提取宽高
-- `GET /files/{key:path}` 校验 sig/exp，供小程序前端展示照片
-- 迁移 `0001_init.py` 建 users + photos
+**ORM 模型**：
+
+- `app/models/user.py` — `users` 表（`id` / `wx_openid` / `nickname` / 软删）。微信 openid 独立建模，登录接入前可为空。
+- `app/models/photo.py` — `photos` 表（`user_id` 外键 / 唯一 `storage_key` / mime / size / 宽高 / `taken_at` / 软删）。
+- `app/models/__init__.py` — 导入新模型，保证 `Base.metadata` 能感知。
+
+**存储抽象** `app/services/storage_service/`：
+
+- `base.py` — `StorageBackend` 抽象类 + `SignedURL` dataclass，定义 `put` / `get` / `exists` / `delete` / `signed_url` 五个方法。
+- `local.py` — `LocalStorage` 实现，文件落在 `backend/storage_local/`。
+- `signing.py` — HMAC-SHA256 签名/校验，URL 形如 `/files/{key}?exp=...&sig=...`。
+- `factory.py` — `get_storage()` 工厂，按 `STORAGE_BACKEND` 返回实现，`@lru_cache` 单例。
+
+**Schema 与 HTTP 路由**：
+
+- `app/schemas/photo.py` — `PhotoUploadResponse` / `PhotoOut`。
+- `app/api/photos.py` — `POST /photos` multipart 上传 + `GET /photos/{id}/url` 重签 URL。
+- `app/api/files.py` — `GET /files/{key:path}` 验签后返回文件流。
+
+**配置与迁移**：
+
+- `STORAGE_URL_SIGN_SECRET`、`STORAGE_URL_TTL_SECONDS=900`、`UPLOAD_MAX_BYTES=8MB`、`UPLOAD_ALLOWED_MIMES=image/jpeg,image/png,image/webp`。
+- `app/db/migrations/versions/0001_init.py` — 手写迁移，建 `users` 和 `photos`，不用 autogenerate。
 
 ### 关键设计决策
 
-- **签名 URL 而非直挂静态目录**：防路径猜测 + 短期过期（默认 15 分钟）
-- **接口和 S3/COS 对齐**：`SignedURL` dataclass + `signed_url(key, ttl)`，将来切云存储不改业务
-- **种子用户 user_id=1**：未接微信登录前，所有请求挂到 id=1；`_ensure_seed_user` 幂等建
+- **签名 URL 而非直挂静态目录**：防路径猜测 + 短期过期（默认 15 分钟）。
+- **接口和 S3/COS 对齐**：`SignedURL` dataclass + `signed_url(key, ttl)`，将来切云存储不改业务。
+- **签名内容**：`HMAC(secret, "{key}|{exp}")`；key 防止签名复用到其他文件，exp + 短 TTL 限制 URL 外传后的有效窗口。
+- **种子用户 user_id=1**：未接微信登录前，所有请求挂到 id=1；`_ensure_seed_user` 幂等创建。接入 `/auth/wx/login` 后只替换真实登录态，不改表结构。
+- **Pillow 二次校验**：不信任 `Content-Type`，用 `PIL.verify()` 确认图像合法并提取宽高。
+- **路径结构**：`photos/{uid}/YYYY/MM/DD/{uuid}.{ext}`，按日分目录避免单目录文件爆炸，uuid 防猜测。
+- **上传与算法解耦**：上传接口只存盘和入库，不在上传请求中运行 MediaPipe/LLM；分析走后续流程，保持上传接口快速。
 
 ### 你需要操作什么
 
-（已完成。/photos POST 已能上传，GET /photos/{id}/url 已能拿到签名地址）
+（已完成。`/photos` POST 已能上传，`GET /photos/{id}/url` 已能拿到签名地址。）
+
+验证流程：
+
+1. 执行 `alembic upgrade head`，预期迁移到 `0001_init`，数据库中出现 `users`、`photos` 和 `alembic_version`。
+2. 重启 uvicorn，在 `/docs` 中调用 `POST /photos` 上传 jpg/png/webp。
+3. 把返回的 `url` 贴到浏览器，确认能看到图片。
+4. 修改 URL 末尾的 `sig` 任意一个字符，确认返回 `403 invalid or expired signature`。
+
+示例返回字段：
+
+```json
+{
+  "photo_id": 1,
+  "storage_key": "photos/1/2026/06/29/xxx.jpg",
+  "width": 1080,
+  "height": 1920,
+  "url": "http://localhost:8000/files/photos/1/2026/06/29/xxx.jpg?exp=...&sig=...",
+  "url_expires_at": "..."
+}
+```
 
 ---
 
@@ -65,20 +184,43 @@
 
 #### 我做了什么
 
-- 新增 `ai_usage_counters` 表 + 迁移 `0002_ai_usage.py`
-- `services/ai_gateway/rate_limit.py`：`try_consume` / `peek` / `require`；用 PG `INSERT ... ON CONFLICT DO UPDATE ... WHERE ... RETURNING` 单 SQL 原子占额
-- `config.py` 新增 `ai_ratelimit_enforce_in_dev`（默认 false）
-- `/ai/debug/quota` GET + `/ai/debug/quota/{kind}/consume` POST，方便调试
+- `app/models/ai_usage.py` — `AIUsageCounter` 表，`(user_id, kind, usage_date)` 唯一约束。
+- `app/db/migrations/versions/0002_ai_usage.py` — 数据库迁移。
+- `services/ai_gateway/rate_limit.py` — `try_consume` / `peek` / `require` / `QuotaExceeded`。
+- `app/api/ai_debug.py` — `GET /ai/debug/quota` 查看 seed user 当日配额，`POST /ai/debug/quota/{kind}/consume` 手动占额。
+- `config.py` 和 `.env.example` — 新增 `AI_RATELIMIT_ENFORCE_IN_DEV`。
 
 #### 关键设计决策
 
-- **原子占额用 UPSERT with WHERE**：达到上限时 UPDATE 分支被 WHERE 挡掉，RETURNING 无返回；避免"先 SELECT 再 UPDATE"的竞态
-- **dev 豁免**：`APP_ENV=dev` 且 `AI_RATELIMIT_ENFORCE_IN_DEV=false` 时直接返回 `used=0, allowed=true`，不查库
-- **不落在中间件层**：限流是业务动作，让 API handler 显式调 `rl.require(...)`，跳过限流的路径（如 /health）不用配置排除清单
+- **单 SQL 完成原子占额**：`INSERT ... ON CONFLICT DO UPDATE ... WHERE count < :limit RETURNING count`。未存在时插入 1；未达上限时更新 +1；达到上限时 WHERE 阻止更新且无 RETURNING，避免“先 SELECT 再 UPDATE”的并发竞态。
+- **dev 豁免**：`APP_ENV=dev` 且 `AI_RATELIMIT_ENFORCE_IN_DEV=false`（默认）时直接放行，不查库、不写库，调试时不会误占产线配额。
+- **测试真实限流**：将 `.env` 中 `AI_RATELIMIT_ENFORCE_IN_DEV=true`、`AI_ANALYZE_DAILY_LIMIT=2`，连续调用三次应为 200、200、429；测完改回 false。
+- **不落在中间件层**：限流是业务动作，让 API handler 显式调用 `rl.require(db, user_id, "analyze")`；健康检查等路径不需要排除清单。
 
 #### 你需要操作什么
 
-（已完成。跑 `alembic upgrade head` 后 `/ai/debug/quota` 能看到 analyze/chat 两条 used=0）
+1. `.env` 追加（可选，默认就是 false）：
+
+```text
+AI_RATELIMIT_ENFORCE_IN_DEV=false
+```
+
+2. 执行迁移：
+
+```powershell
+cd D:\agent\model\projects\skin_care_agent\backend
+.venv\Scripts\activate
+alembic upgrade head
+```
+
+预期：`Running upgrade 0001_init -> 0002_ai_usage`。
+
+3. 重启 uvicorn。
+
+4. 在 `/docs` 验证：
+   - `GET /ai/debug/quota` 应看到 analyze/chat 两条记录，dev 豁免下 `used=0`。
+   - `POST /ai/debug/quota/analyze/consume` 应返回 `allowed=true`，dev 豁免下 used 仍为 0。
+   - 打开真实限流开关并设置每日上限为 2，连续调用三次应为前两次 200、第三次 429；测完改回 false。
 
 ---
 
@@ -925,3 +1067,255 @@ GROUP BY region, status;
 
 
 
+
+---
+
+### Step #6 hardening — tracker / trends 稳定性收口
+
+#### 我做了什么
+
+- 修复同一次分析里两个相近新 patch 误共用一条 lineage 的问题。
+- 修复 analyses / lineages 的 by-photo 静态路由被动态 ID 路由拦截的问题。
+- 空 patch 分析也会推进 dormant / healed 生命周期。
+- tracker 异常时显式 rollback，避免污染后续数据库会话。
+- tracker、lineage、trend 全链路加入 `view_type`，正面、左侧、右侧不再互相误匹配。
+- 趋势区域按“视角 + 面部区域”分组并输出中文视角标签。
+- 清理 Ruff 问题并建立首批回归测试。
+
+#### 关键设计决策
+
+- 三个视角使用独立 lineage 空间；同名 region 只有在同视角内才允许匹配。
+- 旧照片和旧 lineage 统一标记为 `legacy`，不破坏已有数据。
+- tracker 仍是分析后的附属能力；失败记录日志，但分析结果本身保留。
+
+#### 你需要操作什么
+
+（已完成。Ruff 全绿，相关测试已纳入完整测试集。）
+
+---
+
+### Step #7a — 三视角 check-in 基础流程
+
+#### 我做了什么
+
+- 新增 `check_ins` 模型、schema 和 API：创建、列表、详情、完成。
+- `standard` 打卡完成前必须包含 `front / left / right`；`quick` 暂不强制照片，为日记入口预留。
+- 照片上传支持 `check_in_id + view_type`，同一草稿内同视角重拍会软删除旧照片。
+- 照片新增 `quality_status / quality_meta / processed_storage_key`，为下一步质量检测、对齐图预留。
+- 新增迁移 `0009_check_ins` 并已在本地 PostgreSQL 成功升级。
+- 新增 check-in 与路由测试；当前共 13 个测试通过。
+
+#### 关键设计决策
+
+- “一次记录”作为一等实体，避免把三张照片当成三个互不相关的日记录。
+- 标准记录固定三视角，保证后续跨日趋势比较的是同角度照片。
+- 兼容旧版单照片上传：不传 check-in 参数时仍按原流程工作。
+- 当前只建立质量状态接口，不假装已完成姿态、光照和清晰度检测。
+
+#### 你需要操作什么
+
+- 准备 3–5 组仅用于本地开发的正面、左侧、右侧照片；最好包含一次角度或光线明显不合格的样本。
+- 不需要手工迁移数据库；本地库当前已是 `0009_check_ins (head)`。
+- 下一开发步：实现拍照质量门槛与标准化对齐，再接痘痘日记字段。
+---
+
+## 2026-07-13 — 文档与自主开发记录规则整理 — ✅ 已完成
+
+### 本次完成
+
+- 将 `docs/temp_step.md` 中的初始项目路线图合并到本文件开头。
+- 将 `docs/dev_notes.md` 中遗漏的 Step 1 初始化命令、项目目录说明、健康检查验证和 Step 2 上传/签名 URL 验证流程补回对应章节。
+- 将 `CLAUDE.md` 改为以本文件作为唯一开发进度来源，并规定每个可验证里程碑完成后立即记录。
+
+### 验证情况
+
+- 已检查 `CLAUDE.md`、本文件开头及 Step 1/Step 2 章节。
+- 本次只修改文档规则和开发日志，没有运行代码测试。
+
+### 当前阻塞或遗留
+
+- 无。
+- `docs/dev_notes.md` 和 `docs/temp_step.md` 保留为历史/补充文档，不再作为最新进度来源。
+
+### 下一步
+
+- 下一次自主开发开始前读取 `project_background.md`、本文件和 `CLAUDE.md`。
+- 完成每个独立可验证里程碑后，立即在本文件追加记录。
+---
+
+## 2026-07-13 — Step 1/2/3a 文档完整性补充 — ✅ 已完成
+
+### 本次完成
+
+- 依照 `docs/dev_notes.md` 补全 Step 1 的项目结构、PostgreSQL 初始化和健康检查上下文。
+- 补全 Step 2 的 ORM 模型、存储抽象、配置、迁移、签名规则、Pillow 校验和上传验证流程。
+- 补全 Step 3a 的文件清单、原子限流机制、dev 豁免、真实限流测试和操作步骤。
+
+### 验证情况
+
+- 已逐项对照 `docs/dev_notes.md` 的 Step 1、Step 2、Step 3a 章节。
+- 已检查补充内容的章节顺序和 Markdown 结构。
+- 本次只修改日志文档，没有运行代码测试。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 后续开发继续只在本文件追加每个可验证里程碑的完整记录。
+---
+
+## 2026-07-14 — Step #7b 拍照质量门槛与几何标准化 — ✅ 已完成
+
+### 本次完成
+
+- 新增 `app/services/vision/quality.py`：使用本地 MediaPipe Face Landmarker 检查分辨率、清晰度、光照、完整人脸、多人脸、头部倾斜及 front/left/right 视角。
+- `POST /photos` 在标准 check-in 上传时执行质量门槛；失败返回 422、错误码、中文重拍提示和可排障指标，失败照片不进入存储与数据库。
+- 新增 `app/services/vision/normalization.py`：合格照片保留原图，同时生成 `1024×1280` JPEG 几何标准化副本；不美白、不调色、不锐化、不修改皮肤内容。
+- `photos.processed_storage_key` 正式启用；AI 分析优先读取标准化副本，旧照片仍回退到原图。
+- EXIF 方向在上传尺寸读取和 LLM 图片准备阶段统一纠正。
+- 新增 `scripts/download_face_landmarker.ps1`，固定官方模型 URL 和 SHA256；`backend/model_assets/` 已加入 Git 忽略。
+- 应用退出时关闭缓存的 Face Landmarker，释放本地模型资源。
+
+### 验证情况
+
+- 私有样本校准：`set01/front.jpg`、`left.jpg`、`right.jpg` 分别按 front/left/right 全部通过。
+- `set02` 与 `set03` 共 6 张下半脸、裁切或不完整构图样本全部被拒绝；原因覆盖 `image_blurry`、`face_cut_off`、`face_not_detected`。
+- 已目视检查三张标准化输出：额头、两颊和下巴保留，左右侧没有镜像，输出尺寸均为 `1024×1280`。
+- Ruff：全绿。
+- Pytest：20 passed，1 条既有 Starlette/httpx2 弃用警告。
+- 模型下载脚本已通过 PowerShell 语法解析；本地模型 SHA256 为 `64184E229B263107BC2B804C6625DB1341FF2BB731874B0BCC2FE6544E0BC9FF`。
+
+### 当前阻塞或遗留
+
+- MediaPipe 官方说明输入图片在设备本地处理、不会发送到 Google，但 Tasks API 会发送性能和使用指标。当前受限环境中的遥测连接失败；生产上线前需在隐私政策中披露，或将预处理进程部署到禁止外连的网络环境。官方说明：https://github.com/google-ai-edge/mediapipe#privacy-notice
+- 当前完成的是后端拍后校验；微信小程序相机中的实时参考框和即时姿态提示尚未实现。
+- 眼部遮盖尚未实现；需要在不遮挡眼周皮肤观察区域的前提下单独设计。
+
+### 下一步
+
+- 设计并实现痘痘日记字段，使 quick/standard check-in 都能记录睡眠、压力、饮食、经期和护肤变化。
+- 随后按 check-in 而不是单张照片聚合三视角分析和趋势，避免同日多图重复计数。
+- 用户当前无需操作；若在新环境重新拉取项目，运行 `backend/scripts/download_face_landmarker.ps1`。
+
+---
+
+## 2026-07-14 — Step #7c 痘痘日记字段与接口 — ✅ 已完成
+
+### 本次完成
+
+- `check_ins` 新增 `diary_data JSONB` 和 `diary_updated_at`，日记与 quick/standard check-in 一对一关联。
+- 新增结构化日记 schema，覆盖睡眠时长与质量、压力等级、经期阶段、饮食标签、护肤变化、新护肤品、用户主动填写的外用产品及备注。
+- 数值范围、枚举、字符串长度、额外字段均由 Pydantic 严格校验；标签和产品名称会去重，产品名称会去除首尾空白。
+- `POST /check-ins` 支持可选 `diary`；新增 `PUT /check-ins/{id}/diary` 完整替换接口，传空对象可清空日记。
+- 已完成的 check-in 仍允许修正日记，但不会改变照片、完成状态或完成时间。
+- `CheckInOut`、列表和详情接口统一返回 `diary` 与 `diary_updated_at`。
+- 新增迁移 `0010_check_in_diary`，包含 JSONB 对象类型数据库约束，并已在本地 PostgreSQL 从 `0009_check_ins` 升级至 head。
+- README 和项目状态已同步更新。
+
+### 验证情况
+
+- 日记与 OpenAPI 针对性测试：10 passed。
+- 完整回归：24 passed；仅保留 1 条既有 Starlette/httpx2 弃用警告。
+- Ruff 全量静态检查通过；本次涉及的 Python 文件已通过 Ruff format。
+- Alembic：升级前为 `0009_check_ins`，升级后为 `0010_check_in_diary (head)`。
+- 数据库反射确认 `diary_data JSONB`、`diary_updated_at` 和 `ck_check_ins_diary_data_object` 均已创建。
+- 真实 FastAPI + PostgreSQL 往返通过：创建 quick check-in 并写日记、完整替换日记、完成 check-in、完成后修正日记；临时记录已清理。
+
+### 当前阻塞或遗留
+
+- 本子步骤无阻塞。
+- 当前仅完成日记采集与持久化，尚未把三视角分析和日记按 check-in 聚合，也尚未生成生活因素关联提示。
+
+### 下一步
+
+- 按 check-in 聚合 front/left/right 三视角分析，定义单次记录的皮肤指数、严重度、数量和就医提示合并规则。
+- 将趋势 API 从按单张照片统计收口为按 check-in 统计，避免同一天三张照片被重复计数。
+- 聚合稳定后开始微信小程序相机参考框、日记表单和趋势页面。
+
+---
+
+## 2026-07-14 — Step #7d 三视角分析聚合与趋势收口 — ✅ 已完成
+
+### 本次完成
+
+- 新增 `app/services/check_in_aggregation.py`，批量读取 check-in 有效照片的最新成功分析，避免 force 重跑记录重复参与统计。
+- 新增 `GET /check-ins/{id}/analysis-summary`，返回 `empty / partial / ready`、缺失照片视角、缺失分析视角、分视角明细及聚合指标。
+- 聚合规则固定为：整体严重度取最高值、皮肤指数取平均值、`needs_doctor` 做 OR；每个视角先按 region 累加 patch 数量，再对重叠视角的同一 region 取最大值。
+- 聚合响应同时返回日记数据，为后续生活因素关联提供同一 check-in 上下文。
+- `GET /trends/summary` 改为只使用已完成且聚合为 `ready` 的 check-in；同一天只选一条并优先 standard，避免三张照片或多次记录形成重复曲线点。
+- 趋势响应新增 `source / check_in_id / total_check_ins / incomplete_check_ins / superseded_check_ins / total_legacy_records`，前端可以区分聚合记录、旧数据和不完整记录。
+- 保留旧版无 check-in 照片：记录日期优先取 `taken_at`，否则取照片创建时间；同一照片多次分析只取最新成功结果，同一天旧照片只保留最新一张。
+- 本步骤采用读取时聚合，没有新增数据库表或迁移；数据库 head 仍为 `0010_check_in_diary`。
+- README 和项目状态已同步更新。
+
+### 验证情况
+
+- 新增三视角区域去重、严重度/指数/就医提示合并、缺失分析视角、旧结构计数回退和同日 standard 优先测试。
+- 聚合、趋势与 OpenAPI 针对性测试：17 passed。
+- 完整回归：28 passed；仅保留 1 条既有 Starlette/httpx2 弃用警告。
+- Ruff 全量静态检查通过；本次涉及的 8 个 Python 文件已通过 Ruff format 检查。
+- 真实 FastAPI + PostgreSQL 往返通过：临时写入一个完整三视角 check-in 和三条分析，聚合结果为严重度 5、皮肤指数 70、区域去重总数 15、`needs_doctor=true`；`days=1` 趋势只生成一个 check-in 点并计入 3 条底层视角分析。
+- 上述临时 check-in、3 张照片和 3 条分析均已精确清理。
+- 现有旧数据验证：同一旧照片的两次分析在趋势中只保留最新一条，`total_analyses` 从重复的 2 收口为 1。
+
+### 当前阻塞或遗留
+
+- 本子步骤无阻塞。
+- `jaw / temple` 当前 region 标签没有左右侧语义；跨视角取最大值能稳定避免重复，但可能低估左右两侧同时存在的独立数量。需要更精确时应先升级视觉 schema，而不是在聚合层猜测。
+- 当前聚合为读取时计算，适合 MVP 数据规模；数据量明显增长后再评估物化汇总表或缓存。
+- 微信小程序尚未开始，用户还不能从前端完成拍摄、日记、分析与趋势闭环。
+
+### 下一步
+
+- 创建微信原生小程序工程骨架和 API client，先跑通开发环境连接。
+- 实现首页、standard/quick check-in 流程、三视角相机参考框、日记表单和聚合结果页。
+- 接入趋势页面，并对 `partial / incomplete / superseded / legacy` 状态提供用户可理解的提示。
+
+---
+
+## 2026-07-15 — Step #6 correctness：Check-in 感知的生命周期收口 — ✅ 已完成
+
+### 本次完成
+
+- 将 lineage 从“按服务器时间自动老化”改为“由同视角有效照片的观察证据推进”。
+- 新增 `patch_lineage_observations`，逐条记录 `present / missing`、观察日期、check-in、照片、分析、是否推进状态及原因。
+- `patch_lineages` 新增首次出现日、最后出现日、最后观察日、最后出现 check-in、连续缺失次数和状态原因；snapshot 新增 `check_in_id / observed_on`。
+- `photos` 新增 tracker 分析标记和时间；同一照片即使强制重分析，也只允许推进一次。
+- 完成状态机：`present → active`；第一次有效 `missing → dormant`；至少连续两次有效 missing 且距最后 present 满 14 天才 `healed`。
+- 没上传、缺少该视角、check-in 尚未完成或分析尚未成功时不生成 missing，也不改变 lineage。
+- 移除固定 14 天匹配窗口：中间没有观察时，相隔超过 14 天仍可按 region + bbox 继续尚未 healed 的原链。
+- 草稿照片先分析时延迟追踪；check-in 完成时原子处理已有分析。check-in 完成后才分析的照片会在分析成功后立即追踪。
+- 新增 `GET /lineages/by-check-in/{check_in_id}`；lineage 详情返回观察证据时间线，列表和趋势改用观察日期排序与统计。
+- 新增迁移 `0011_check_in_lineages`。历史 snapshot 回填为 present；旧墙上时间推导的 dormant/healed 不继承，统一按最后一张历史照片恢复为 active；已有成功分析照片做幂等标记，历史草稿 check-in 保留完成时首次追踪能力。
+
+### 关键设计决策
+
+- “用户没拍”是没有观察，不等于病灶消失；只有同一视角、质量通过且分析成功的照片才能提供 missing 证据。
+- front / left / right 的 lineage 空间继续隔离，某次 check-in 缺少 right 时不会影响 right lineage。
+- 同一观察日不会重复累计 missing；历史日期的迟到分析保留审计记录，但不倒推当前状态。
+- 尚未 healed 的同位置病灶可以跨长时间无照片间隔接续；一旦由重复缺失证据 healed，后续相似病灶新建 lineage。
+- check-in 完成与已有分析的生命周期写入放在同一事务；失败会回滚完成状态，允许客户端重试。
+
+### 验证情况
+
+- Alembic 已从 `0010_check_in_diary` 升级到 `0011_check_in_lineages (head)`，并完成一次 downgrade → upgrade 往返。
+- 数据库反射确认 observation 表、日期字段、照片幂等字段、外键、索引和 `lineage_id + photo_id` 唯一约束均存在。
+- 真实 PostgreSQL 链路通过：6 月 1 日 right present 为 active；6 月 10 日只有 front 照片时 right 仍 active；随后 right 首次 missing 为 dormant；6 月 20 日第二次 missing 后为 healed。
+- 上述链路生成且仅生成 `present / missing / missing` 三条证据；同一照片重分析返回 `photo_already_tracked`，观察数不增加。
+- 真实 FastAPI 验证 `GET /lineages/{id}` 与 `GET /lineages/by-check-in/{id}` 均返回正确状态和时间线；临时 check-in、照片、分析、snapshot、observation 和 lineage 已精确清理。
+- 完整回归：33 passed；仅保留 1 条既有 Starlette/httpx2 弃用警告。
+- Ruff 全量静态检查通过，Git diff whitespace 检查通过。
+
+### 当前阻塞或遗留
+
+- 当前仍是 region + bbox 中心距离的贪心匹配；病灶密集、合并或分裂时可能发生身份交换，后续可升级为全局分配与更稳定的视觉特征。
+- 同日多次 check-in 会保留审计记录，但只有向前的观察日累计 missing；产品层仍应引导每天完成一个主 check-in。
+- 微信小程序尚未展示生命周期链，也没有周期提醒、局部区域对照 UI。
+
+### 下一步
+
+- 创建微信原生小程序骨架，先接入 check-in、三视角拍摄、日记、分析聚合和趋势页面。
+- 在结果页加入按 check-in 查询的区域生命周期入口，并用用户可理解的文案区分“仍可见、一次未见、连续未见”。
+- 用户当前无需操作；其他环境部署时运行 `alembic upgrade head`。

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
 
 class PhotoUploadResponse(BaseModel):
     photo_id: int
+    check_in_id: int | None = None
+    view_type: str | None = None
+    quality_status: str | None = None
+    quality_meta: dict[str, Any] | None = None
     storage_key: str
     mime_type: str
     size_bytes: int
@@ -20,6 +24,10 @@ class PhotoUploadResponse(BaseModel):
 
 class PhotoOut(BaseModel):
     photo_id: int
+    check_in_id: int | None = None
+    view_type: str | None = None
+    quality_status: str | None = None
+    quality_meta: dict[str, Any] | None = None
     storage_key: str
     mime_type: str
     width: Optional[int] = None

@@ -2,12 +2,14 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 from app.api.lineages import _summarize_trend
-from app.api.trends import _build_highlights
+from app.api.trends import _build_highlights, _select_daily_check_in_summaries
 from app.schemas.trend import DailyPoint, RegionSummary
 
 
 def test_lineage_trend_summary_orders_snapshots() -> None:
     later = SimpleNamespace(
+        id=2,
+        observed_on=date(2026, 7, 10),
         created_at=datetime(2026, 7, 10, tzinfo=timezone.utc),
         estimated_count=3,
         severity=2,
@@ -16,6 +18,8 @@ def test_lineage_trend_summary_orders_snapshots() -> None:
         inflammation="mild",
     )
     earlier = SimpleNamespace(
+        id=1,
+        observed_on=date(2026, 7, 3),
         created_at=datetime(2026, 7, 3, tzinfo=timezone.utc),
         estimated_count=8,
         severity=4,
@@ -68,3 +72,36 @@ def test_highlights_fallback_when_no_data() -> None:
         region_summaries=[],
         days=30,
     ) == ["数据不足，请继续追踪几日后查看趋势。"]
+
+
+def test_daily_trend_prefers_one_ready_standard_check_in() -> None:
+    day = date(2026, 7, 14)
+    quick = SimpleNamespace(
+        aggregation_status="ready",
+        observed_on=day,
+        kind="quick",
+        latest_analysis_at=datetime(2026, 7, 14, 12, tzinfo=timezone.utc),
+        check_in_id=3,
+    )
+    standard = SimpleNamespace(
+        aggregation_status="ready",
+        observed_on=day,
+        kind="standard",
+        latest_analysis_at=datetime(2026, 7, 14, 10, tzinfo=timezone.utc),
+        check_in_id=2,
+    )
+    incomplete = SimpleNamespace(
+        aggregation_status="partial",
+        observed_on=date(2026, 7, 13),
+        kind="standard",
+        latest_analysis_at=None,
+        check_in_id=1,
+    )
+
+    selected, incomplete_count, superseded_count = _select_daily_check_in_summaries(
+        [quick, standard, incomplete]
+    )
+
+    assert selected[day].check_in_id == 2
+    assert incomplete_count == 1
+    assert superseded_count == 1

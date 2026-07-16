@@ -1,27 +1,22 @@
 # Skin Care Agent — Backend
 
-AI 皮肤管理产品的后端服务。FastAPI + PostgreSQL + 多模态 LLM Gateway。
+AI 皮肤长期追踪产品的 FastAPI 后端。它只描述外观状态，不诊断病种、不推荐药品、不指导用药。
 
-> ⚠️ **合规红线**：本服务**只描述外观状态**，不诊断病种、不推荐药品、不指导用药。
+## 当前能力
 
----
-
-## 这是什么
-
-长期皮肤（痘痘）追踪 + 趋势可视化的后端。**不是诊断工具**。核心能力：
-
-- 📷 拍照上传 + 短期签名 URL（对齐云存储 Presigned URL 模式）
-- 🧠 AI 状态描述（多模型 Gateway：Qwen-VL / GLM-4V / MiniMax / 豆包，含降级链 + 合规中间件 + 限流）
-- 🔍 跨日单痘追踪（MediaPipe 对齐 + 匈牙利匹配 + 状态机，**产品护城河**）
-- 📈 趋势可视化、痘痘日记、用药日志（仅记录，不指导用药）、AI 问答
-
----
+- 三视角 check-in：正面、左侧、右侧，支持同视角重拍。
+- 痘痘日记：记录睡眠、压力、饮食、经期、护肤变化和用户主动填写的外用产品。
+- 本地拍照质量门槛：清晰度、光照、完整人脸、头部倾斜和视角检查。
+- 几何标准化：保留原图，另存 `1024×1280` 标准化副本；不美白、不调色、不修改皮肤。
+- 多模态 LLM 状态分析：结构化结果、合规扫描、限流、fallback 和调用追踪。
+- Check-in 感知的 Patch lineage 生命周期、三视角聚合与按日去重的趋势 API。
+- AI 护肤问答与医疗风险服务端兜底。
 
 ## 快速开始
 
 ### 1. 准备 Python 环境
 
-需要 Python ≥ 3.11，推荐 [uv](https://github.com/astral-sh/uv)。
+需要 Python ≥ 3.11，推荐使用 uv。
 
 ```powershell
 cd backend
@@ -32,114 +27,116 @@ uv pip install -e ".[dev]"
 
 ### 2. 准备 PostgreSQL 16
 
-**A. Docker**
 ```powershell
 docker run -d --name skin-pg `
   -e POSTGRES_USER=skin -e POSTGRES_PASSWORD=skin -e POSTGRES_DB=skin_care `
   -p 5432:5432 postgres:16
 ```
 
-**B. 本机安装** → 建库建用户：
+也可以使用本机 PostgreSQL：
+
 ```sql
 CREATE USER skin WITH PASSWORD 'skin';
 CREATE DATABASE skin_care OWNER skin;
 ```
 
-### 3. 配置 `.env`
+### 3. 配置环境变量
 
 ```powershell
 copy .env.example .env
 ```
 
-最低限度填好：
-- `DATABASE_URL`（按上面建的库/用户/密码）
-- `STORAGE_URL_SIGN_SECRET`（dev 用默认值即可，生产改强随机串）
-- `AI_PROVIDER_PRIMARY=mock`（MVP 第一周不接真实 LLM）
+至少确认：
 
-### 4. 跑迁移
+- `DATABASE_URL`
+- `STORAGE_URL_SIGN_SECRET`
+- `AI_PROVIDER_PRIMARY` 及所选 provider 的 API key
+
+### 4. 下载本地人脸关键点模型
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\download_face_landmarker.ps1
+```
+
+模型保存在 `backend/model_assets/`，该目录已被 Git 忽略。人脸关键点在本机计算，输入照片不会由 MediaPipe 发送给 Google；MediaPipe Tasks 会发送性能和使用指标，生产上线前需要写入隐私说明或把预处理进程置于禁止外连的网络环境。
+
+### 5. 应用数据库迁移
 
 ```powershell
 alembic upgrade head
 ```
 
-### 5. 启动
+当前 head：`0011_check_in_lineages`。
+
+### 6. 启动服务
 
 ```powershell
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 6. 验证
+### 7. 验证
 
 | 检查 | URL | 期望 |
 |---|---|---|
-| 进程 | `GET /health` | `{"status":"ok",...}` |
-| 数据库 | `GET /health/db` | `{"status":"ok","db":"reachable"}` |
-| 接口文档 | http://localhost:8000/docs | Swagger UI 打开 |
+| 进程 | `GET /health` | `status=ok` |
+| 数据库 | `GET /health/db` | `db=reachable` |
+| 接口文档 | `http://localhost:8000/docs` | Swagger UI 打开 |
 
----
+## 主要接口
 
-## 当前能力
+| 模块 | 接口 |
+|---|---|
+| Check-in | `POST /check-ins` · `GET /check-ins` · `PUT /check-ins/{id}/diary` · `GET /check-ins/{id}/analysis-summary` · `POST /check-ins/{id}/complete` |
+| 照片 | `POST /photos` · `GET /photos/{id}/url` |
+| AI 分析 | `POST /analyses` · `GET /analyses/by-photo/{photo_id}` |
+| Patch 追踪 | `GET /lineages` · `GET /lineages/{id}` · `GET /lineages/by-photo/{photo_id}` · `GET /lineages/by-check-in/{check_in_id}` |
+| 趋势 | `GET /trends/summary` |
+| 问答 | `POST /chat` · `GET /chat/history` |
 
-| 模块 | 状态 | 接口 |
-|---|---|---|
-| 健康检查 | ✅ | `GET /health` · `GET /health/db` |
-| 照片上传 | ✅ | `POST /photos` · `GET /photos/{id}/url` · `GET /files/{key}` |
-| AI 分析 | 🚧 | 待实现 |
-| 跨日追踪 | 🚧 | 待实现 |
+`POST /check-ins` 可选传入 `diary`；也可以用 `PUT /check-ins/{id}/diary` 完整替换。空对象 `{}` 会清空日记，已完成的 check-in 仍允许修正日记。主要字段包括：
 
-完整开发进度与设计决策见 **[`dev_notes.md`](./dev_notes.md)**。
+- `sleep_hours`（0–24）、`sleep_quality`（1–5）、`stress_level`（1–5）
+- `menstrual_phase`：`pre_period / during_period / post_period / not_in_period`
+- `diet_tags`：`spicy / sugary / dairy / fried / alcohol`
+- `skincare_changed`、`new_skincare_products`、`topical_products`、`notes`
 
----
+`topical_products` 只保存用户主动输入的记录，不代表系统推荐任何产品或药品。
 
-## 目录结构
+### 三视角聚合口径
 
-```
-app/
-├── api/              # HTTP 路由（薄，只做参数校验和编排）
-│   ├── health.py
-│   ├── photos.py
-│   └── files.py
-├── services/         # 业务逻辑（厚）
-│   ├── ai_service/        # 统一 AI Gateway（多模型路由 + 合规中间件）  🚧
-│   ├── storage_service/   # 对象存储抽象（local / cos）                 ✅
-│   └── vision/            # 图像预处理 + 跨日追踪 (A1)                  🚧
-├── models/           # SQLAlchemy ORM
-├── schemas/          # Pydantic 请求/响应
-├── db/
-│   ├── session.py
-│   └── migrations/   # Alembic
-├── config.py         # pydantic-settings 读 .env
-└── main.py           # FastAPI factory
-```
+`GET /check-ins/{id}/analysis-summary` 对每个有效视角只读取最新一条成功分析，并返回 `empty / partial / ready` 状态：
 
----
+- 整体严重度取各视角最高值，避免稀释局部严重表现。
+- 皮肤指数取已有视角平均值；就医提示按任一视角为真即为真。
+- 痘痘数量先在单个视角内按区域累加，再对三个重叠视角的同一区域取最大值，避免正面与侧面直接重复相加。
+- `missing_photo_views` 与 `missing_analysis_views` 分开返回，便于前端准确提示补拍或补分析。
 
-## 常用命令速查
+`GET /trends/summary` 只把已完成且聚合状态为 `ready` 的 check-in 放入曲线，同一天只保留一条并优先 standard；响应会给出 `incomplete_check_ins` 和 `superseded_check_ins`。旧版无 check-in 的照片仍兼容，但同一照片多次强制分析只取最新一次，同一天旧照片只保留最新一张。
+
+### Patch 生命周期口径
+
+生命周期由“有效观察”推进，不再根据服务器时间自动老化：
+
+- 只有已完成 check-in 中成功分析的同视角照片才产生观察；草稿、未上传和缺少该视角都不改变状态。
+- 当前照片中匹配到病灶记为 `present` 并保持或恢复 `active`；首次有效 `missing` 只进入 `dormant`。
+- 至少连续两次同视角有效 `missing`，且距最后一次 `present` 已满 14 个观察日，才进入 `healed`。
+- 没有中间照片时，即使相隔超过 14 天，只要病灶位置仍能匹配且尚未由缺失证据判定 healed，就继续原 lineage。
+- 同一照片只推进一次；旧版无 check-in 照片按 `taken_at`（缺失时按创建时间）兼容。
+
+`GET /lineages/{id}` 会返回 `present / missing` 观察时间线、状态原因和连续缺失次数；`GET /lineages/by-check-in/{check_in_id}` 返回该次 check-in 明确观察到的全部 lineage。
+
+## 常用开发命令
 
 ```powershell
-# 进虚拟环境
-.venv\Scripts\activate
+# 静态检查
+.venv\Scripts\ruff.exe check --no-cache .
 
-# 启动（reload 模式）
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# 测试
+$env:PYTHONDONTWRITEBYTECODE='1'
+.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
 
-# 新建迁移
-alembic revision -m "describe change"            # 手写
-alembic revision --autogenerate -m "..."         # 自动生成（仅参考）
-
-# 应用迁移 / 回滚
-alembic upgrade head
-alembic downgrade -1
-
-# 进数据库
-psql -h localhost -U skin -d skin_care
+# 迁移状态
+.venv\Scripts\alembic.exe current
 ```
 
----
-
-## 设计原则
-
-- **MVP 不过度工程化**：不上 K8s、不上分布式、不上 Milvus。本地能跑、能验证产品假设即可。
-- **不与微信耦合**：后续要迁 App，登录/通知层保持抽象。
-- **密钥全部走 `.env`**：不进 git，`.env.example` 是模板。
-- **抽象只在边界**：存储、AI Provider、登录 —— 这些必然要换实现的地方做抽象；业务代码不做提前设计。
+完整进度和设计决策见 [`dev_notes.md`](./dev_notes.md)。

@@ -51,7 +51,13 @@ logger = logging.getLogger(__name__)
 
 
 class AnalysisFailed(Exception):
-    def __init__(self, status: str, message: str, log_id: Optional[int] = None, trace_id: Optional[str] = None):
+    def __init__(
+        self,
+        status: str,
+        message: str,
+        log_id: Optional[int] = None,
+        trace_id: Optional[str] = None,
+    ):
         super().__init__(message)
         self.status = status
         self.message = message
@@ -87,7 +93,8 @@ async def analyze_photo(
     trace_log.info("analyze.start", photo_id=photo.id, user_id=user_id)
 
     storage = get_storage()
-    raw = storage.get(photo.storage_key)
+    analysis_storage_key = photo.processed_storage_key or photo.storage_key
+    raw = storage.get(analysis_storage_key)
     prepared = prepare_for_llm(raw)
     trace_log.info(
         "analyze.image_prep",
@@ -99,7 +106,9 @@ async def analyze_photo(
 
     input_meta: dict[str, Any] = {
         "photo_id": photo.id,
-        "storage_key": photo.storage_key,
+        "storage_key": analysis_storage_key,
+        "source_storage_key": photo.storage_key,
+        "used_processed_image": photo.processed_storage_key is not None,
         "prompt_version": VISION_ANALYZE_PROMPT_VERSION,
         "original_size": [prepared.original_width, prepared.original_height],
         "resized_size": [prepared.width, prepared.height],
@@ -330,13 +339,16 @@ async def analyze_photo(
     try:
         from app.services.vision.tracker import track_patches_for_analysis
 
-        track_result = track_patches_for_analysis(db, analysis)
+        track_result = track_patches_for_analysis(db, analysis, photo=photo)
         trace_log.info(
             "analyze.tracker.done",
             analysis_id=analysis.id,
             new_lineages=track_result.new_lineage_count,
             matched_lineages=track_result.matched_lineage_count,
+            missing_observations=track_result.missing_observation_count,
             snapshots=len(track_result.snapshot_ids),
+            skipped=track_result.skipped,
+            skip_reason=track_result.skip_reason,
         )
     except Exception as e:  # noqa: BLE001
         db.rollback()

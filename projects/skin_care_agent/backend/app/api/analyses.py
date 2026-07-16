@@ -82,16 +82,6 @@ async def create_analysis(
     return _to_out(result.analysis, cached=False)
 
 
-@router.get("/{analysis_id}", response_model=AnalysisOut)
-def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> AnalysisOut:
-    from app.models.analysis import Analysis
-
-    a = db.get(Analysis, analysis_id)
-    if a is None or a.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="analysis not found")
-    return _to_out(a, cached=False)
-
-
 @router.get("/by-photo/{photo_id}", response_model=list[AnalysisOut])
 def list_by_photo(photo_id: int, db: Session = Depends(get_db)) -> list[AnalysisOut]:
     from app.models.analysis import Analysis
@@ -103,3 +93,13 @@ def list_by_photo(photo_id: int, db: Session = Depends(get_db)) -> list[Analysis
         .all()
     )
     return [_to_out(a, cached=False) for a in rows]
+
+
+@router.get("/{analysis_id}", response_model=AnalysisOut)
+def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> AnalysisOut:
+    from app.models.analysis import Analysis
+
+    a = db.get(Analysis, analysis_id)
+    if a is None or a.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="analysis not found")
+    return _to_out(a, cached=False)

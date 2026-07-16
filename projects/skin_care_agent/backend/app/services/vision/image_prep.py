@@ -12,7 +12,7 @@ import base64
 import io
 from dataclasses import dataclass
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 DEFAULT_MAX_EDGE_PX = 1600
@@ -39,6 +39,7 @@ def prepare_for_llm(
     """把上传图压缩到长边 <= max_edge_px 的 JPEG，返回 data URL。"""
     with Image.open(io.BytesIO(raw_bytes)) as img:
         img.load()
+        img = ImageOps.exif_transpose(img)
         original_w, original_h = img.size
 
         if img.mode not in ("RGB", "L"):
