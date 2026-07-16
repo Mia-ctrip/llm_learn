@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +21,7 @@ class Photo(Base, IdMixin, TimestampMixin):
         BigInteger, ForeignKey("check_ins.id", ondelete="SET NULL"), nullable=True, index=True
     )
     view_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    client_request_id: Mapped[Optional[UUID]] = mapped_column(Uuid, nullable=True)
 
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
     processed_storage_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)

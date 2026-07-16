@@ -8,11 +8,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_app_user
 from app.db.session import get_db
 from app.models.analysis import Analysis
 from app.models.check_in import CheckIn
 from app.models.patch_lineage import PatchLineage, PatchLineageSnapshot
 from app.models.photo import Photo
+from app.models.user import User
 from app.schemas.check_in import CheckInAnalysisSummaryOut
 from app.schemas.trend import DailyPoint, RegionSummary, TrendSummaryOut
 from app.services.ai_gateway.schema import REGION_ZH
@@ -26,7 +28,6 @@ from app.services.check_in_aggregation import (
 
 router = APIRouter(prefix="/trends", tags=["trends"])
 
-_SEED_USER_ID = 1
 _VIEW_ZH = {"front": "正面", "left": "左侧", "right": "右侧"}
 
 
@@ -83,6 +84,7 @@ def _photo_recorded_at(photo: Photo) -> datetime:
 def _load_legacy_daily_records(
     db: Session,
     *,
+    user_id: int,
     start_dt: datetime,
     end_dt: datetime,
 ) -> dict[date, _LegacyRecord]:
@@ -92,7 +94,7 @@ def _load_legacy_daily_records(
     photos = list(
         db.execute(
             select(Photo).where(
-                Photo.user_id == _SEED_USER_ID,
+                Photo.user_id == user_id,
                 Photo.check_in_id.is_(None),
                 Photo.deleted_at.is_(None),
                 recorded_at >= start_dt,
@@ -125,6 +127,7 @@ def _load_legacy_daily_records(
 @router.get("/summary", response_model=TrendSummaryOut)
 def trend_summary(
     days: int = Query(default=30, ge=1, le=365),
+    current_user: User = Depends(get_current_app_user),
     db: Session = Depends(get_db),
 ) -> TrendSummaryOut:
     """当前用户在最近 N 天的分析曲线与痘斑生命周期总览。"""
@@ -137,7 +140,7 @@ def trend_summary(
         db.execute(
             select(CheckIn)
             .where(
-                CheckIn.user_id == _SEED_USER_ID,
+                CheckIn.user_id == current_user.id,
                 CheckIn.status == "complete",
                 CheckIn.deleted_at.is_(None),
                 CheckIn.observed_on >= start_date,
@@ -152,6 +155,7 @@ def trend_summary(
     )
     legacy_by_day = _load_legacy_daily_records(
         db,
+        user_id=current_user.id,
         start_dt=start_dt,
         end_dt=end_dt,
     )
@@ -201,7 +205,7 @@ def trend_summary(
     lineages = list(
         db.execute(
             select(PatchLineage).where(
-                PatchLineage.user_id == _SEED_USER_ID,
+                PatchLineage.user_id == current_user.id,
                 PatchLineage.deleted_at.is_(None),
             )
         ).scalars()

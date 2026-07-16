@@ -120,14 +120,14 @@ async def test_check_in_upload_rejects_failed_quality(monkeypatch) -> None:
             taken_at=None,
             check_in_id=1,
             view_type="front",
+            client_request_id=None,
+            current_user=SimpleNamespace(id=1),
             db=object(),
         )
 
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail["errors"] == ["face_cut_off"]
-    assert "额头、两颊和下巴" in exc_info.value.detail["quality_meta"][
-        "error_messages"
-    ][0]
+    assert "额头、两颊和下巴" in exc_info.value.detail["quality_meta"]["error_messages"][0]
 
 
 @pytest.mark.asyncio
@@ -145,6 +145,8 @@ async def test_check_in_upload_reports_missing_quality_model(monkeypatch) -> Non
             taken_at=None,
             check_in_id=1,
             view_type="front",
+            client_request_id=None,
+            current_user=SimpleNamespace(id=1),
             db=object(),
         )
 
@@ -158,7 +160,6 @@ async def test_passed_check_in_upload_stores_original_and_normalized(monkeypatch
     storage = _FakeStorage()
     monkeypatch.setattr(photos, "_validate_check_in_target", lambda *args, **kwargs: None)
     monkeypatch.setattr(photos, "assess_photo_quality", lambda *args, **kwargs: _passed_quality())
-    monkeypatch.setattr(photos, "ensure_seed_user", lambda db: SimpleNamespace(id=1))
     monkeypatch.setattr(photos, "get_storage", lambda: storage)
     monkeypatch.setattr(
         photos,
@@ -171,6 +172,8 @@ async def test_passed_check_in_upload_stores_original_and_normalized(monkeypatch
         taken_at=None,
         check_in_id=1,
         view_type="front",
+        client_request_id=None,
+        current_user=SimpleNamespace(id=1),
         db=db,
     )
 

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 
 class PhotoUploadResponse(BaseModel):
     photo_id: int
+    client_request_id: UUID | None = None
     check_in_id: int | None = None
     view_type: str | None = None
     quality_status: str | None = None
@@ -24,6 +26,7 @@ class PhotoUploadResponse(BaseModel):
 
 class PhotoOut(BaseModel):
     photo_id: int
+    client_request_id: UUID | None = None
     check_in_id: int | None = None
     view_type: str | None = None
     quality_status: str | None = None

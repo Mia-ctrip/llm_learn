@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_app_user
 from app.db.session import get_db
 from app.models.check_in import CheckIn
 from app.models.patch_lineage import (
@@ -14,6 +15,7 @@ from app.models.patch_lineage import (
     PatchLineageSnapshot,
 )
 from app.models.photo import Photo
+from app.models.user import User
 from app.schemas.lineage import (
     LineageDetailOut,
     LineageObservationOut,
@@ -23,9 +25,6 @@ from app.schemas.lineage import (
 
 
 router = APIRouter(prefix="/lineages", tags=["lineages"])
-
-
-_SEED_USER_ID = 1
 
 
 def _snap_to_out(s: PatchLineageSnapshot) -> LineageSnapshotOut:
@@ -119,13 +118,14 @@ def list_lineages(
     region: Optional[str] = Query(default=None),
     view_type: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
+    current_user: User = Depends(get_current_app_user),
     db: Session = Depends(get_db),
 ) -> list[LineageOut]:
     """当前用户的所有 lineage，按最新出现时间倒序。"""
     stmt = (
         select(PatchLineage)
         .where(
-            PatchLineage.user_id == _SEED_USER_ID,
+            PatchLineage.user_id == current_user.id,
             PatchLineage.deleted_at.is_(None),
         )
         .order_by(
@@ -166,10 +166,14 @@ def list_lineages(
 
 
 @router.get("/by-photo/{photo_id}", response_model=list[LineageOut])
-def list_lineages_by_photo(photo_id: int, db: Session = Depends(get_db)) -> list[LineageOut]:
+def list_lineages_by_photo(
+    photo_id: int,
+    current_user: User = Depends(get_current_app_user),
+    db: Session = Depends(get_db),
+) -> list[LineageOut]:
     """一张照片的所有 patch 对应的 lineage（用于展示"这张照片的每片痘斑是从哪来的"）。"""
     photo = db.get(Photo, photo_id)
-    if photo is None or photo.deleted_at is not None or photo.user_id != _SEED_USER_ID:
+    if photo is None or photo.deleted_at is not None or photo.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="photo not found")
 
     # 找该 photo 相关的所有 snapshots → 拿唯一的 lineage_ids
@@ -208,11 +212,12 @@ def list_lineages_by_photo(photo_id: int, db: Session = Depends(get_db)) -> list
 @router.get("/by-check-in/{check_in_id}", response_model=list[LineageOut])
 def list_lineages_by_check_in(
     check_in_id: int,
+    current_user: User = Depends(get_current_app_user),
     db: Session = Depends(get_db),
 ) -> list[LineageOut]:
     """本次 check-in 明确观察到 present 或 missing 的全部 lineage。"""
     check_in = db.get(CheckIn, check_in_id)
-    if check_in is None or check_in.deleted_at is not None or check_in.user_id != _SEED_USER_ID:
+    if check_in is None or check_in.deleted_at is not None or check_in.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="check-in not found")
 
     observations = list(
@@ -234,7 +239,7 @@ def list_lineages_by_check_in(
             select(PatchLineage)
             .where(
                 PatchLineage.id.in_(lineage_ids),
-                PatchLineage.user_id == _SEED_USER_ID,
+                PatchLineage.user_id == current_user.id,
                 PatchLineage.deleted_at.is_(None),
             )
             .order_by(
@@ -260,10 +265,14 @@ def list_lineages_by_check_in(
 
 
 @router.get("/{lineage_id}", response_model=LineageDetailOut)
-def get_lineage(lineage_id: int, db: Session = Depends(get_db)) -> LineageDetailOut:
+def get_lineage(
+    lineage_id: int,
+    current_user: User = Depends(get_current_app_user),
+    db: Session = Depends(get_db),
+) -> LineageDetailOut:
     """一条 lineage 的完整时间线。"""
     lineage = db.get(PatchLineage, lineage_id)
-    if lineage is None or lineage.deleted_at is not None or lineage.user_id != _SEED_USER_ID:
+    if lineage is None or lineage.deleted_at is not None or lineage.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="lineage not found")
 
     snaps = list(

@@ -16,14 +16,27 @@ def test_openapi_exposes_tracking_endpoints() -> None:
     with TestClient(app) as client:
         paths = client.get("/openapi.json").json()["paths"]
 
-    assert "/check-ins" in paths
-    assert "/check-ins/{check_in_id}/diary" in paths
-    assert "/check-ins/{check_in_id}/analysis-summary" in paths
-    assert "/check-ins/{check_in_id}/complete" in paths
-    assert "/lineages" in paths
-    assert "/lineages/by-check-in/{check_in_id}" in paths
-    assert "/lineages/{lineage_id}" in paths
-    assert "/trends/summary" in paths
+    assert "/api/v1/auth/register" in paths
+    assert "/api/v1/auth/login" in paths
+    assert "/api/v1/auth/refresh" in paths
+    assert "/api/v1/me/consents" in paths
+    assert "/api/v1/check-ins" in paths
+    assert "/api/v1/check-ins/{check_in_id}/diary" in paths
+    assert "/api/v1/check-ins/{check_in_id}/analysis-summary" in paths
+    assert "/api/v1/check-ins/{check_in_id}/complete" in paths
+    assert "/api/v1/lineages" in paths
+    assert "/api/v1/lineages/by-check-in/{check_in_id}" in paths
+    assert "/api/v1/lineages/{lineage_id}" in paths
+    assert "/api/v1/trends/summary" in paths
+    assert "/check-ins" not in paths
+
+
+def test_business_endpoint_requires_bearer_token() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/v1/check-ins")
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_static_by_photo_routes_precede_dynamic_id_routes() -> None:

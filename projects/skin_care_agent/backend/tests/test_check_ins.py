@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -83,6 +84,7 @@ def test_replace_diary_updates_completed_check_in(monkeypatch) -> None:
     result = check_ins.replace_check_in_diary(
         check_in_id=9,
         body=CheckInDiary(sleep_hours=7.5, stress_level=4, diet_tags=["spicy"]),
+        current_user=SimpleNamespace(id=1),
         db=db,
     )
 
@@ -97,3 +99,19 @@ def test_replace_diary_updates_completed_check_in(monkeypatch) -> None:
     assert result.diary is not None
     assert result.diary.sleep_hours == 7.5
     assert result.diary.diet_tags == ["spicy"]
+
+
+def test_load_check_in_hides_another_users_record() -> None:
+    row = CheckIn(
+        user_id=2,
+        kind="quick",
+        status="draft",
+        observed_on=date(2026, 7, 14),
+    )
+    row.id = 9
+    db = _FakeDB(row)
+
+    with pytest.raises(check_ins.HTTPException) as exc_info:
+        check_ins._load_check_in(db, 9, user_id=1)
+
+    assert exc_info.value.status_code == 404

@@ -3,8 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_app_user
 from app.db.session import get_db
 from app.models.chat_message import ChatMessage
+from app.models.user import User
 from app.schemas.chat import ChatMessageOut, ChatRequest, ChatResponse
 from app.services import chat_service
 from app.services.ai_gateway import rate_limit as rl
@@ -13,18 +15,16 @@ from app.services.ai_gateway import rate_limit as rl
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-_SEED_USER_ID = 1  # MVP：未接微信登录前所有请求挂到 user_id=1
-
-
 @router.post("", response_model=ChatResponse, status_code=status.HTTP_201_CREATED)
 async def post_chat(
     body: ChatRequest,
     response: Response,
+    current_user: User = Depends(get_current_app_user),
     db: Session = Depends(get_db),
 ) -> ChatResponse:
     # 医疗兜底命中的情况也占额（避免有人拿关键词绕限流）
     try:
-        rl.require(db, user_id=_SEED_USER_ID, kind="chat")
+        rl.require(db, user_id=current_user.id, kind="chat")
     except rl.QuotaExceeded as e:
         raise HTTPException(
             status_code=429,
@@ -42,7 +42,7 @@ async def post_chat(
     try:
         result = await chat_service.send_chat(
             db,
-            user_id=_SEED_USER_ID,
+            user_id=current_user.id,
             user_message=body.message,
             analysis_id=analysis_id,
             history=history,
@@ -76,12 +76,16 @@ async def post_chat(
 @router.get("/history", response_model=list[ChatMessageOut])
 def list_chat_history(
     limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_current_app_user),
     db: Session = Depends(get_db),
 ) -> list[ChatMessageOut]:
-    """当前 seed user 的问答历史，倒序。"""
+    """当前用户的问答历史，倒序。"""
     rows = (
         db.query(ChatMessage)
-        .filter(ChatMessage.user_id == _SEED_USER_ID, ChatMessage.deleted_at.is_(None))
+        .filter(
+            ChatMessage.user_id == current_user.id,
+            ChatMessage.deleted_at.is_(None),
+        )
         .order_by(ChatMessage.id.desc())
         .limit(limit)
         .all()

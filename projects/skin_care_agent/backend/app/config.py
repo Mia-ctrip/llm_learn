@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_log_level: str = "INFO"
+    api_v1_prefix: str = "/api/v1"
+    cors_allowed_origins: str = ""
 
     # db
     database_url: str = "postgresql+psycopg://skin:skin@localhost:5432/skin_care"
@@ -42,6 +44,17 @@ class Settings(BaseSettings):
     ai_analyze_daily_limit: int = 10
     ai_chat_daily_limit: int = 50
     ai_ratelimit_enforce_in_dev: bool = False  # dev 环境默认豁免；true 时强制开启
+
+    # auth
+    auth_access_token_ttl_seconds: int = 15 * 60
+    auth_refresh_token_ttl_seconds: int = 30 * 24 * 60 * 60
+    auth_registration_enabled: bool = True
+
+    # required consent document versions
+    consent_terms_version: str = "2026-07-16"
+    consent_privacy_version: str = "2026-07-16"
+    consent_health_disclaimer_version: str = "2026-07-16"
+    consent_ai_processing_version: str = "2026-07-16"
 
     # ai providers
     ai_provider_primary: str = "mock"
@@ -67,7 +80,7 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
 
-    # wechat
+    # optional future identity provider
     wx_appid: str = ""
     wx_secret: str = Field(default="")
 
@@ -85,6 +98,19 @@ class Settings(BaseSettings):
     @property
     def allowed_mime_set(self) -> set[str]:
         return {m.strip() for m in self.upload_allowed_mimes.split(",") if m.strip()}
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [item.strip() for item in self.cors_allowed_origins.split(",") if item.strip()]
+
+    @property
+    def required_consents(self) -> dict[str, str]:
+        return {
+            "terms": self.consent_terms_version,
+            "privacy": self.consent_privacy_version,
+            "health_disclaimer": self.consent_health_disclaimer_version,
+            "ai_processing": self.consent_ai_processing_version,
+        }
 
 
 @lru_cache

@@ -6,6 +6,7 @@ Importing this module ensures all models are registered on Base.metadata
 
 from app.models.base import Base  # noqa: F401
 from app.models.user import User  # noqa: F401
+from app.models.auth import AuthSession, UserConsent, UserIdentity  # noqa: F401
 from app.models.check_in import CheckIn  # noqa: F401
 from app.models.photo import Photo  # noqa: F401
 from app.models.ai_usage import AIUsageCounter  # noqa: F401
@@ -21,6 +22,9 @@ from app.models.patch_lineage import (  # noqa: F401
 __all__ = [
     "Base",
     "User",
+    "UserIdentity",
+    "AuthSession",
+    "UserConsent",
     "CheckIn",
     "Photo",
     "AIUsageCounter",

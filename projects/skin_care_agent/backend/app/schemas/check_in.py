@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
@@ -60,6 +61,7 @@ class CheckInCreate(BaseModel):
     observed_on: date
     kind: CheckInKind = "standard"
     diary: CheckInDiary | None = None
+    client_request_id: UUID | None = None
 
 
 class CheckInPhotoOut(BaseModel):
@@ -109,6 +111,7 @@ class CheckInAnalysisSummaryOut(BaseModel):
 
 class CheckInOut(BaseModel):
     check_in_id: int
+    client_request_id: UUID | None = None
     kind: CheckInKind
     status: CheckInStatus
     observed_on: date
