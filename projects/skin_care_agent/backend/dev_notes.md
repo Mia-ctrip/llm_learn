@@ -1322,6 +1322,61 @@ GROUP BY region, status;
 
 ---
 
+## 2026-07-16 — Step #8a App 后端基础化：账号、隔离、协议与幂等 — ✅ 已完成
+
+### 本次完成
+
+- 按 `docs/platform_strategy.md` 将客户端主线从微信小程序切换为独立 App；现有 check-in、分析、趋势和生命周期领域模型保持复用。
+- 新增 `user_identities`：`users.id` 继续作为平台无关数据主体，原 `users.wx_openid` 回填为 `provider=wechat` 的可选身份来源后从用户主表移除。
+- 内测第一登录方式采用邮箱 + 密码；新增注册、登录、Refresh Token 轮换、当前会话登出和 `GET /me`。
+- 密码使用 PBKDF2-HMAC-SHA256、随机盐和 600,000 次迭代；Access/Refresh Token 使用高熵随机值，数据库只保存 SHA-256 哈希。
+- 新增 `auth_sessions`，Access Token 默认 15 分钟、Refresh Token 默认 30 天；刷新会同时轮换两种 Token，旧 Token 立即失效，登出可即时撤销会话。
+- 新增 `user_consents` 及 `GET/PUT /api/v1/me/consents`，版本化记录用户协议、隐私政策、健康免责声明和 AI 数据处理说明；未接受当前版本时业务接口返回 403。
+- 新增 `DELETE /api/v1/me`：再次验证密码后删除用户，依靠外键级联清理业务数据，并清理本地存储中的原图和标准化照片。
+- 所有业务 API 统一迁移到 `/api/v1`；照片、check-in、分析、问答、趋势和 lineage 全部改为从 Bearer Token 读取当前用户并校验资源归属，跨用户 ID 统一返回 404。
+- 移除固定 `SEED_USER_ID=1` 服务。AI 调试路由只在 `APP_ENV=dev` 挂载；CORS 改为显式白名单，原生 App 默认无需 CORS。
+- check-in 和照片新增用户级 `client_request_id UUID` 与部分唯一索引；顺序重试和并发重试都会返回第一条记录。重复完成 check-in 也改为直接返回当前结果。
+- 新增迁移 `0012_app_foundation`，包含身份、会话、协议、幂等字段与索引；迁移同时同步历史显式 `users.id=1` 导致的 PostgreSQL 自增序列偏移。
+- 修复空日记的旧问题：`CheckIn.diary_data` 使用 `JSONB(none_as_null=True)`，确保 Python `None` 写为 SQL NULL，而不是违反对象约束的 JSON `null`。
+- `.env.example`、README、项目背景和平台策略已同步 App 认证、`/api/v1`、协议版本及当前限制。
+
+### 关键设计决策
+
+- 第一阶段只做邮箱密码，避免在 20～50 人内测前引入短信供应商；`user_identities` 保留未来增加手机号、微信或 Apple 身份的空间。
+- 使用数据库支持的 opaque session，而不是自行实现 JWT；因此会话可以立即撤销，适合涉及皮肤照片和健康相关信息的产品。
+- 登录成功不等于允许处理皮肤数据；协议接口可在未接受状态下访问，其余业务统一通过协议门槛依赖。
+- App 弱网幂等使用客户端生成 UUID，而不是依赖请求到达时间；唯一性限定在用户范围内。
+- 本步骤不引入新第三方依赖，不改变 AI 分析、趋势聚合或生命周期算法。
+
+### 验证情况
+
+- Alembic `0011_check_in_lineages → 0012_app_foundation` 升级成功，并完成一次 `downgrade 0011 → upgrade head` 往返；当前数据库为 `0012_app_foundation (head)`。
+- 数据库反射确认 `user_identities / auth_sessions / user_consents`、用户级幂等 UUID 字段和两个部分唯一索引均存在；`users.wx_openid` 已移除。
+- 真实 FastAPI + PostgreSQL 双用户链路通过：
+  - 注册后未接受协议时创建 check-in 返回 403，接受四项当前版本协议后成功；
+  - 相同 UUID 两次创建 check-in、两次上传照片均返回同一资源；
+  - 用户 B 访问用户 A 的 check-in 和照片 URL 均返回 404；
+  - Refresh Token 轮换后旧 Access/Refresh Token 都失效，登出后新 Access Token 失效；
+  - 账号注销后身份、check-in、照片数据库记录及实际照片文件全部删除。
+- 上述测试账号、会话、协议、check-in、照片和文件均已清理，数据库只保留原开发用户数据。
+- 完整回归：42 passed；仅保留 1 条既有 Starlette/httpx2 弃用警告。
+- Ruff 全量静态检查通过；Git diff whitespace 检查通过。
+
+### 当前阻塞或遗留
+
+- 内测邮箱尚未做真实性验证，也没有找回密码；公开注册前需要邮件服务或改为手机号验证码。
+- 登录接口尚未增加 IP/账号级防爆破和邀请白名单；`AUTH_REGISTRATION_ENABLED` 可在不开放注册时关闭。
+- 当前仍使用本地文件存储和同步 AI 分析；公开测试前应接 COS/S3，弱网体验不足时再引入异步分析任务。
+- App 技术栈尚未最终选择，客户端工程尚未创建。
+
+### 下一步
+
+- 在 Flutter、React Native/Expo 中确定一种跨平台方案，创建 App 工程骨架和安全 Token 存储。
+- 先联调注册/登录、首次协议和 Token 刷新，再跑通 check-in → 三视角拍照 → 分析 → 日记 → 趋势/生命周期。
+- 其他环境拉取代码后需要运行 `alembic upgrade head`；现有未版本化业务 URL 已迁移为 `/api/v1`。
+
+---
+
 ## 2026-07-16 — MVP 客户端平台策略 — ✅ 已完成
 
 ### 本次完成

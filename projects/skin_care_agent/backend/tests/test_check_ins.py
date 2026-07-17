@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.dialects.postgresql import dialect
 
 from app.api import check_ins
 from app.api.check_ins import _missing_required_views, _serialize_diary
@@ -51,6 +52,14 @@ def test_diary_normalizes_duplicate_tags_and_product_names() -> None:
 
 def test_empty_diary_serializes_as_null() -> None:
     assert _serialize_diary(CheckInDiary()) is None
+
+
+def test_empty_diary_binds_as_sql_null_instead_of_json_null() -> None:
+    diary_type = CheckIn.__table__.c.diary_data.type
+    processor = diary_type.bind_processor(dialect())
+
+    assert processor is not None
+    assert processor(None) is None
 
 
 class _FakeDB:

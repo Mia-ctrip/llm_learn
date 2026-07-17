@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.api import analyses, lineages
-from app.main import app
+from app.main import app, create_app, settings
 
 
 def test_health_endpoint() -> None:
@@ -37,6 +37,16 @@ def test_business_endpoint_requires_bearer_token() -> None:
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_production_app_does_not_mount_ai_debug_routes(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "app_env", "prod")
+    prod_app = create_app()
+
+    with TestClient(prod_app) as client:
+        paths = client.get("/openapi.json").json()["paths"]
+
+    assert not any("/debug/" in path for path in paths)
 
 
 def test_static_by_photo_routes_precede_dynamic_id_routes() -> None:
