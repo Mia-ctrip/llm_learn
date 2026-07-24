@@ -1,3 +1,5 @@
+> **历史归档说明（2026-07-20）**：本文是早期路线草稿，不作为当前计划或进度来源。当前主线见 [`../project_background.md`](../project_background.md) 和 [`../backend/dev_notes.md`](../backend/dev_notes.md)。以下原文保留用于追溯历史。
+
 1. 基础脚手架：FastAPI 起项目、配置、PG 连接、alembic 初始迁移、健康检查端点 → 跑通 GET /health
 2. storage_service + 上传：本地实现 + photos 表 + POST /photos → 能上传一张图、能签 URL 读回来
 3. ai_service Mock 版：mock provider + 合规中间件 + schema_guard + 限流 → POST /analyses 返回假数据但全链路通

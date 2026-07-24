@@ -1,5 +1,7 @@
 # 开发笔记 — Skin Care Agent Backend
 
+> **历史归档说明（2026-07-20）**：本文只记录早期后端开发过程，已停止维护，不是当前进度来源。唯一最新开发日志为 [`../backend/dev_notes.md`](../backend/dev_notes.md)；项目当前状态见 [`../project_background.md`](../project_background.md)。以下原文保留用于追溯历史。
+
 记录每个 Step 的实现要点、设计决策、操作步骤。代码细节看源码，这里只记不容易从代码里直接看出来的东西。
 
 ---

@@ -1,18 +1,42 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { colors } from '@/constants/theme';
+import { SessionProvider, useSession } from '@/providers/session-provider';
 
-SplashScreen.preventAutoHideAsync();
+function RootNavigator() {
+  const { phase, hasRequiredConsents } = useSession();
+  const signedIn = phase === 'authenticated';
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <>
+      <StatusBar style="dark" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+          animation: 'fade',
+        }}>
+        <Stack.Screen name="index" />
+        <Stack.Protected guard={phase === 'anonymous'}>
+          <Stack.Screen name="login" />
+          <Stack.Screen name="register" />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn && !hasRequiredConsents}>
+          <Stack.Screen name="consents" />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn && hasRequiredConsents}>
+          <Stack.Screen name="home" />
+        </Stack.Protected>
+      </Stack>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <SessionProvider>
+      <RootNavigator />
+    </SessionProvider>
   );
 }

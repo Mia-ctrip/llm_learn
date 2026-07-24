@@ -9,9 +9,11 @@ metadata:
 
 # 痤疮识别方案调研结论（2026-07-03）
 
+> **状态说明（2026-07-20）**：本文的视觉模型调研结论仍作为技术参考；文中微信小程序表述属于撰写时的早期平台背景。当前客户端路线为 React Native + Expo SDK 57 App，最新进度见 [`../project_background.md`](../project_background.md) 和 [`../backend/dev_notes.md`](../backend/dev_notes.md)。
+
 ## 一、问题背景
 
-项目 skin_care_agent（微信小程序 AI 皮肤管理伴侣）当前识图方案：
+项目 skin_care_agent（当前为 iOS / Android App；本文撰写时仍按微信小程序设想）识图方案：
 - **后端 LLM 视觉模型**：MiniMax-M3 / Qwen-VL / GLM-4V（v2 patch schema，输出 JSON 含 patch bbox / coverage / dominant_type / estimated_count）
 - **每次分析成本**：5-10 分钱
 - **痛点**：每次调用 5-10s 慢、结果稳定性受 LLM 抽风影响、重度用户融合成片时数不准

@@ -41,7 +41,7 @@ AI 驱动的**长期皮肤管理伴侣**（iOS / Android App + FastAPI 后端）
 
 | 层级 | 选型 |
 |------|------|
-| 前端 | 跨平台原生 App（Flutter / React Native / Expo 待客户端阶段定型） |
+| 前端 | React Native + Expo SDK 57（iOS / Android） |
 | 后端 | FastAPI + PostgreSQL + Alembic |
 | 存储 | 本地文件系统（MVP） → 腾讯 COS（生产） |
 | AI 视觉 | 多模型网关（Qwen-VL / GLM-4V / MiniMax / Doubao） |
@@ -61,10 +61,12 @@ AI 驱动的**长期皮肤管理伴侣**（iOS / Android App + FastAPI 后端）
 - ✅ App 后端基础化：邮箱密码、可撤销 Token、协议确认、多用户隔离、`/api/v1`、账号注销与移动端请求幂等
 - ✅ 数据库迁移 `0012_app_foundation`，微信身份从用户主表迁入可扩展身份来源
 - ✅ 后端回归测试：42 个测试通过，Ruff 全绿
-- ⏳ 下一步：确定跨平台 App 技术栈，创建客户端骨架并跑通登录到趋势的最小纵向闭环
+- ✅ 客户端技术栈确定为 React Native + Expo SDK 57，Expo 工程骨架已创建
+- 🚧 客户端账号闭环：登录、注册、Token 安全存储与轮换、首次协议确认、受保护路由和占位首页已实现静态版本，待真实前后端联调
+- ⏳ 下一步：完成账号与协议闭环联调，再实现 check-in → 三视角拍照 → 分析 → 日记 → 趋势/生命周期
 - ⏳ 随后：基于日记与趋势数据生成克制的生活因素关联提示
 
-**当前阶段**：后端已具备 App 内测所需的账号与数据隔离基础，进入 App 客户端用户可操作闭环。
+**当前阶段**：后端已具备 App 内测基础，React Native + Expo 客户端正在建立首条用户可操作闭环。
 
 ---
 

@@ -1,5 +1,7 @@
 # 项目任务：搭建「AI 皮肤管理」微信小程序 MVP 框架
 
+> **历史归档说明（2026-07-20）**：本文是项目最初的微信小程序需求，不再代表当前平台决策。项目现已改为 React Native + Expo SDK 57 的 iOS / Android App；当前状态见 [`../project_background.md`](../project_background.md)、[`platform_strategy.md`](./platform_strategy.md) 和 [`../backend/dev_notes.md`](../backend/dev_notes.md)。以下原文保留用于追溯决策演进。
+
 ## 〇、协作方式（请先读这条）
 
 我不期待一轮对话敲定所有结构和技术栈，希望我们**先讨论、后动手**。我给你很高的权限，也很 value 你的专业建议，请随时向我提问、提出更优方案。合作愉快。

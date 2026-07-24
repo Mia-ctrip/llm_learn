@@ -1401,3 +1401,173 @@ GROUP BY region, status;
 
 - 设计 App MVP 信息架构和首条用户主流程。
 - 评估 Flutter、React Native 或 Expo，并创建客户端工程骨架。
+
+---
+
+## 2026-07-20 — App 前端设计与实现工作流 — ✅ 已完成
+
+### 本次完成
+
+- 在 `design/prompts/UI/前端设计与实现工作流_2026-07-20.md` 记录 App 从技术选型、视觉方向、Figma 设计系统、关键页面、用户验证到客户端实现和真机内测的完整顺序。
+- 明确以 Figma 为设计真源，优先验证登录/协议、三视角拍照、聚合结果和趋势四类关键页面，再分段实现业务闭环。
+- 记录现有 Figma、图像生成及平台 MCP 的职责边界，并加入合规、照片隐私、无障碍和完成定义。
+- 实时核对 OpenAI curated Skills 清单和 Git 仓库；`frontend-skill` 当前不存在于可安装目录，因此未用搜索缓存或第三方副本替代安装。
+
+### 验证情况
+
+- 已检查目标文档路径位于现有 `design/prompts/UI/` 目录。
+- 已核对工作流覆盖当前后端 `/api/v1`、协议门槛、三视角 check-in、分析聚合、趋势与生命周期能力。
+- `frontend-skill` 通过官方安装脚本的 download 与 git 两种模式验证，均返回官方仓库中不存在该 Skill 路径；实时 curated 列表也未列出该名称。
+- 本次仅新增 Markdown 文档并追加开发日志，不涉及代码、数据库迁移或依赖变更，因此未运行后端测试。
+
+### 当前阻塞或遗留
+
+- App 技术栈尚未确定，Figma 设计文件和客户端工程尚未创建。
+- `frontend-skill` 暂时无法从 OpenAI 官方 curated 仓库安装；后续需等待官方恢复或另行确认可信来源。
+
+### 下一步
+
+- 比较 Flutter 与 React Native/Expo 并确定客户端技术栈。
+- 基于市场配色调研提出 2～3 个视觉方向，在用户确认后建立 Figma 最小设计系统和四个关键页面。
+- 若用户希望采用非官方审美 Skill，应先审查来源和完整内容，再单独决定是否安装。
+
+---
+
+## 2026-07-20 — Step #9a 补充：Expo 客户端骨架与账号闭环 — 🚧 进行中
+
+### 本次完成
+
+- 校准中断会话后的真实进度：客户端技术栈已经确定为 React Native + Expo SDK 57，Expo 工程骨架已经创建，不再处于 Flutter / React Native 待选型阶段。
+- 确认当前未提交客户端实现覆盖登录、注册、Access/Refresh Token 会话恢复与轮换、Refresh Token 安全存储、首次四项协议确认、受保护路由、基础组件和占位首页。
+- 更新 project_background.md、backend/README.md、docs/platform_strategy.md 和前端设计工作流，使当前阶段与下一步和真实代码一致。
+- 为 docs/init_prompt.md、docs/idea.md、docs/dev_notes.md、docs/temp_step.md 和 CV 调研文档增加历史归档或状态说明；保留原文，不再让早期微信小程序方案被误认为当前决策。
+
+### 验证情况
+
+- 客户端 TypeScript 类型检查通过。
+- ESLint 无缓存检查通过；git diff --check 通过。
+- 默认 npm run lint 在当前环境因无法创建 .expo/cache/eslint 而中止，未发现对应源码 lint 错误。
+- 全局检索当前状态文档，未再发现“技术栈待定”“客户端尚未创建”或要求创建微信小程序工程等过期现行表述。
+- docs/idea.md 和 docs/temp_step.md 的历史正文已与当前 HEAD 原文逐字符归一化比对，确认完整保留。
+- 本次只修改 Markdown 文档，未改业务代码、数据库或依赖，因此未重新运行后端测试。
+
+### 当前阻塞或遗留
+
+- 账号与协议闭环尚未在真实设备或模拟器上完成前后端端到端联调，不能标记为已完成。
+- check-in、三视角拍照、质量反馈、AI 分析、日记、趋势和生命周期页面尚未接入。
+
+### 下一步
+
+- 在真实设备或模拟器上联调注册、登录、首次协议、Token 刷新和登出。
+- 联调通过后完成 Step #9a 的测试与日志收口。
+- 随后进入 check-in → 三视角拍照 → 分析 → 日记 → 趋势/生命周期的首条完整用户路径。
+---
+
+## 2026-07-20 — UI 市场配色调研样本扩展 — ✅ 已完成
+
+### 本次完成
+
+- 将 `design/prompts/UI/市场配色调研_2026-07-17.md` 的日韩和中国样本均从 4 款扩展至 10 款，两个地区合计 20 款。
+- 新增日韩样本：Olive Young、GangnamUnni、UNPA、Powder Room、NOIN、美事；新增中国样本：肌肤秘诀、肌肤管家、成分喵、小红书、美图秀秀、肌肤之境。
+- 为每款新增样本补充主色、辅助色、Accent 色的 HEX、RGB、HSL 值、产品定位、视觉特征和公开官网或商店核实链接；相邻样本已明确标注。
+
+### 验证情况
+
+- 已逐项核对调研表，日韩与中国均为 10 款，且新增行均含颜色数值和至少一条公开来源链接。
+- 使用公开 App Store 图标或品牌/商店物料完成取色；实体色统一按 `α=1.00` 记录。
+- 本次仅更新 Markdown 调研档案与进度日志，不涉及代码、数据库迁移或依赖变更，未运行后端测试。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 与用户共同对日韩和中国样本进行色相、明度、饱和度、色彩组合与视觉语气分析，再形成候选配色方向；本阶段暂不直接定案。
+---
+
+## 2026-07-20 — Figma 市场配色研究板创建 — ⏸ 阻塞
+
+### 本次完成
+
+- 已在 Figma 创建 `Skin Care Agent · 市场配色研究板` 设计文件，并初始化本地颜色变量集合 `Market Color Research`。
+- 已建立研究板容器及背景、中性色、市场色彩簇与候选方向色变量，为后续色卡和候选页面预览提供可编辑基础。
+
+### 验证情况
+
+- Figma 成功返回新文件 key `u9LCCOXGFvJl37jBdLXj6W` 与文件链接。
+- 写入第一个标题区时，Figma MCP 明确返回 Starter 计划调用额度已达上限；该失败操作为原子失败，未写入标题区内容。
+
+### 当前阻塞或遗留
+
+- Figma Starter 计划的 MCP 调用额度已用尽；需要升级计划或等待额度恢复，才能继续写入日韩/中国色卡、色彩簇和候选试验区。
+
+### 下一步
+
+- 用户恢复 Figma MCP 可用额度后，继续在现有文件中逐段完成研究板并进行截图核验。
+- 若不恢复额度，可改为在仓库中生成静态 SVG/PNG 配色研究板供讨论，但不具备 Figma 的原生可编辑性。
+---
+
+## 2026-07-20 — Step #9a 验证补充：账号与协议闭环 — 🚧 进行中
+
+### 本次完成
+
+- 按 mobile/AGENTS.md 核对 Expo SDK 57 官方 SecureStore、Protected Routes 和测试文档，三个官方页面均可访问。
+- 审计本机运行环境：PostgreSQL 16 正常运行，数据库迁移为 0012_app_foundation；本机没有 Android SDK、adb、Android Emulator 或 Android Studio，Windows 环境也无法提供 iOS Simulator。
+- 完成 Expo Web 生产导出，静态路由包含 index、login、register、consents 和 home。
+- 使用 FastAPI TestClient 连接真实 PostgreSQL 跑通注册、未同意协议时业务接口 403、四项协议接受、Access/Refresh Token 同时轮换、旧 Token 失效、新 Token 可用、登出、重新登录、协议状态保留和账号注销。
+- 测试账号已经通过 DELETE /api/v1/me 注销；注销后再次登录返回 401，没有遗留测试用户。
+
+### 验证情况
+
+- 后端完整回归：42 passed，保留 1 条既有 Starlette/httpx2 弃用警告。
+- 客户端 TypeScript 类型检查通过。
+- 客户端 ESLint 无缓存检查通过。
+- Expo Web production export 通过，生成 7 个静态路由和约 1.2 MB Web bundle。
+- 真实 PostgreSQL 契约 smoke 全部通过：register=201、consent gate=403、refresh=200、旧 Access/Refresh=401、logout=204、账号清理=204。
+- Edge/Chrome Headless 在当前执行器中无法可靠等待 GUI 子进程，未获得浏览器 DOM 运行时证据；相关 4173/4174 静态服务已停止，本轮启动的两个无窗口 Edge 进程已精确终止。
+
+### 当前阻塞或遗留
+
+- Step #9a 尚未在 Android 或 iOS 真实设备/模拟器中操作验证，因此不能标记为已完成。
+- 当前项目未安装 Jest、jest-expo、React Native Testing Library 或 react-test-renderer；遵循“不擅自安装依赖”，本轮未补 UI 自动化测试依赖。
+- 本机缺少 Android 开发环境；iOS 模拟器验证需要 macOS，iOS 真机验证需要可用设备和签名环境。
+
+### 下一步
+
+- 准备 Android 模拟器或连接安装 Expo Go / development build 的 Android 真机，联调注册、登录、协议、Token 恢复与登出。
+- 在 macOS/iPhone 环境完成同一套 iOS 验证。
+- 双端运行时验证通过后，将 Step #9a 更新为已完成，再进入 check-in 与三视角拍照上传实现。
+
+---
+
+## 2026-07-20 — Step #9a 修正/补充：本机启动与真实 HTTP 联调 — ⏸ 阻塞
+
+### 本次完成
+
+- 按 Android 模拟器路线核对本机环境，并安装、验证 Microsoft OpenJDK 17.0.19 LTS。
+- 确认客户端现有依赖和后端虚拟环境可用，数据库迁移保持在 `0012_app_foundation (head)`。
+- 真实启动 Uvicorn 后端与 Expo Metro；后端监听 `8000`，Metro 监听 `8081`。
+- 通过真实 HTTP 临时账号跑通注册、四项协议、Token 轮换、登出、重新登录和账号注销；测试账号已删除。
+- 未修改业务源码；联调使用的临时 PowerShell smoke 脚本已精确删除。
+
+### 验证情况
+
+- 客户端 `npm run typecheck` 通过。
+- 客户端 `npm exec eslint . -- --no-cache` 通过。
+- `GET /health` 返回 `status=ok`，`GET /health/db` 返回数据库可达，`GET /docs` 返回 HTTP 200。
+- Metro `GET http://127.0.0.1:8081/status` 返回 HTTP 200 和 `packager-status:running`。
+- 真实 HTTP 闭环结果：register=201、consents GET/PUT=4 项、refresh=200、旧 Access=401、logout=204、登出后 Access=401、relogin=200、delete account=204、注销后 Access=401。
+- Android 模拟器运行时仍未验证，因此 Step #9a 不能标记为完成。
+
+### 当前阻塞或遗留
+
+- Android Studio 自动安装被 Windows 管理员策略阻止；Chocolatey 下载在 684,720,128 字节处停滞后已终止残留进程，Android Studio、Android SDK、adb 和 AVD 仍未安装。
+- Android Studio 部分安装包保留在用户 Chocolatey 临时目录，可由用户选择清理或改用浏览器重新下载官方完整安装器。
+- Expo Metro 需要项目级写入 `.expo` 运行缓存；本次已通过受控权限成功启动，但仍缺少模拟器连接和页面操作证据。
+
+### 下一步
+
+- 用户手动从 Android Studio 官方页面下载安装器，以 Standard 模式安装 Android SDK Platform 36、Platform-Tools、Build-Tools 和 Android Emulator。
+- 用户在 Device Manager 创建并启动 API 36 Pixel AVD，随后在新 PowerShell 中验证 `adb devices`。
+- 模拟器就绪后运行 `npx expo start` 并按 `a`，完成注册、协议、会话恢复和登出的端到端页面验证，再收口 Step #9a。
