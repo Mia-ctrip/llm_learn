@@ -1763,3 +1763,33 @@ GROUP BY region, status;
 - 用户允许后启用 Windows Hypervisor Platform 或项目实际需要的虚拟化功能，并按系统提示重启。
 - 通过 Android Studio 官方安装器完成 IDE、Command-line Tools 和 API 36 system image 安装。
 - 创建 API 36 Pixel AVD，设置 Android SDK 环境变量并验证 `adb devices`。
+
+---
+
+## 2026-07-28 — Android 联调环境配置补充：Pixel 8 AVD 与虚拟化 — ⏸ 阻塞
+
+### 本次完成
+
+- 用户已通过 Android Device Manager 创建 `Pixel_8` AVD。
+- 确认 AVD 使用 Android 16 / API 36、Google Play、`x86_64` 系统镜像，设备模板为 Pixel 8，内存配置为 2048 MB。
+- 启用 Windows `HypervisorPlatform` 可选功能，执行时使用 `NoRestart`，未自动重启电脑。
+- 在用户级环境变量中设置 `ANDROID_HOME`、`ANDROID_SDK_ROOT` 和 `JAVA_HOME`，并将 SDK 的 `platform-tools`、`emulator` 目录加入用户 PATH。
+
+### 验证情况
+
+- `emulator -list-avds` 返回 `Pixel_8`。
+- `emulator -accel-check` 在启用功能前已返回 `WHPX(10.0.26200) is installed and usable`。
+- API 36 Google Play 系统镜像路径存在：`system-images\android-36\google_apis_playstore\x86_64`。
+- `adb version` 返回 Platform-Tools `37.0.0`，`emulator -list-avds` 在当前 PowerShell 中可直接执行。
+- Windows 功能状态已从 Disabled 变为 Enabled，但系统返回 `RestartNeeded=True`，尚未完成重启后验证。
+
+### 当前阻塞或遗留
+
+- 等待用户手动重启 Windows，使 Hypervisor Platform 配置正式生效。
+- Android Studio 可执行文件不在两个常见默认路径，但 API 36 镜像和 AVD 已由 Device Manager 成功创建，不影响当前重启后的模拟器验证。
+
+### 下一步
+
+- 用户重启电脑后重新进入项目会话。
+- 验证 `emulator -accel-check`、启动 `Pixel_8`，并确认 `adb devices` 显示 `emulator-xxxx device`。
+- 随后启动后端和 Expo，在 Android 模拟器中完成 Step #9a 账号与协议闭环。
