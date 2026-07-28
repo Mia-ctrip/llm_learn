@@ -1704,3 +1704,32 @@ GROUP BY region, status;
 ### 下一步
 
 - 用户按命令化后的 `docs/environment_setup.md` 从 `winget --version` 开始配置新电脑。
+
+---
+
+## 2026-07-28 — 移动端 ESLint 依赖解析基线修复 — ✅ 已完成
+
+### 本次完成
+
+- 创建并切换到功能分支 `feat/mobile-check-in-flow`，后续移动端开发不直接修改 `main`。
+- 定位 ESLint 的 83 个错误并非源码问题，而是当前锁文件将 `eslint-import-resolver-typescript` 安装在 `eslint-config-expo` 内部，`eslint-plugin-import` 按包名无法从项目根加载该 resolver。
+- 修改 `mobile/eslint.config.js`，保留 Expo SDK 57 的原始 flat config，只将其中的 TypeScript resolver 映射到 `eslint-config-expo` 自带实例的绝对路径。
+- 未新增业务依赖，最终未修改 `mobile/package.json` 和 `mobile/package-lock.json`。
+
+### 验证情况
+
+- 先在原始锁文件执行 `npm ci`，随后稳定复现 ESLint 83 个 resolver/别名误报，确认测试红灯与根因一致。
+- 修复后 `npm exec eslint . -- --no-cache` 通过。
+- `npm run test:unit` 通过，共 10 项测试。
+- `npm run typecheck` 通过。
+- `git diff --check` 通过。
+
+### 当前阻塞或遗留
+
+- `npm ci` 在 npm 11 下提示现有锁文件可能存在无效或受损条目，但本次安装完成且三项移动端质量检查均通过；后续需要单独评估是否整理锁文件，不能混入当前功能改动。
+- npm 审计报告现有依赖树包含 11 个 moderate、9 个 high 告警；本次未擅自执行 `npm audit fix`。
+
+### 下一步
+
+- 配置 Android Studio、Android SDK 36、Platform-Tools、Emulator 和 API 36 AVD。
+- Android 运行环境可用后，先完成 Step #9a 的账号与协议闭环验证，再进入三视角 check-in 页面开发。
