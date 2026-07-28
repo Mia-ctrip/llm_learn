@@ -1733,3 +1733,33 @@ GROUP BY region, status;
 
 - 配置 Android Studio、Android SDK 36、Platform-Tools、Emulator 和 API 36 AVD。
 - Android 运行环境可用后，先完成 Step #9a 的账号与协议闭环验证，再进入三视角 check-in 页面开发。
+
+---
+
+## 2026-07-28 — Android 联调环境核查 — ⏸ 阻塞
+
+### 本次完成
+
+- 核查了当前 Windows 11、JDK、Android SDK、虚拟化、磁盘和安装器状态。
+- 确认本机已有 Android SDK Platform `android-36.1`、Build-Tools `36.0.0`、Platform-Tools `37.0.0` 和 Android Emulator `36.6.11.0`。
+- 确认系统固件虚拟化已开启，C 盘剩余约 135.8 GB、D 盘剩余约 254.6 GB，满足后续安装空间要求。
+- 未修改系统功能，未安装 Android Studio、系统镜像或其他依赖。
+
+### 验证情况
+
+- SDK 路径为 `D:\Users\yumeifeng\AppData\Local\Android\Sdk`，其中 `adb.exe` 和 `emulator.exe` 可直接运行。
+- Android Studio、Command-line Tools、API 36 system image 和 AVD 均不存在。
+- `ANDROID_HOME`、`ANDROID_SDK_ROOT` 和 `JAVA_HOME` 当前均未设置。
+- `VirtualMachinePlatform`、`HypervisorPlatform` 和 `Microsoft-Hyper-V-All` 当前均为 Disabled。
+- Windows App Installer 已安装，但当前 `winget.exe` 启动返回访问被拒绝，不能依赖 winget 自动安装 Android Studio。
+
+### 当前阻塞或遗留
+
+- 启用 Windows 虚拟化功能需要系统级修改并可能要求重启。
+- Android Studio 和 API 36 system image 尚未安装；需要用户明确许可后才能继续系统配置。
+
+### 下一步
+
+- 用户允许后启用 Windows Hypervisor Platform 或项目实际需要的虚拟化功能，并按系统提示重启。
+- 通过 Android Studio 官方安装器完成 IDE、Command-line Tools 和 API 36 system image 安装。
+- 创建 API 36 Pixel AVD，设置 Android SDK 环境变量并验证 `adb devices`。
