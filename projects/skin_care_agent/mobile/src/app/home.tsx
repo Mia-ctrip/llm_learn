@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -10,11 +11,6 @@ import { userFacingError } from '@/lib/errors';
 import { useSession } from '@/providers/session-provider';
 
 const nextCapabilities = [
-  {
-    step: '01',
-    title: '今日 Check-in',
-    description: '三视角拍照、质量校验与极简日记。',
-  },
   {
     step: '02',
     title: '变化趋势',
@@ -53,6 +49,14 @@ export default function HomeScreen() {
         description="安全登录、Token 轮换、协议版本和用户数据隔离已经接入真实后端。"
       />
       <InlineNotice message="下一阶段将从“今日 Check-in”开始，把拍照、分析、日记与趋势接成首条完整用户路径。" />
+      <View style={styles.checkIn}>
+        <Text style={styles.step}>01</Text>
+        <Text style={styles.checkInTitle}>今日 Check-in</Text>
+        <Text style={styles.checkInDescription}>
+          依次拍摄正面、左侧和右侧照片，记录今天的皮肤状态。
+        </Text>
+        <AppButton label="开始今日 Check-in" onPress={() => router.push('/check-in')} />
+      </View>
       <View style={styles.list}>
         {nextCapabilities.map((item) => (
           <View key={item.step} style={styles.card}>
@@ -83,8 +87,27 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   list: {
     gap: spacing.md,
-    marginTop: spacing.xl,
     marginBottom: spacing.xl,
+  },
+  checkIn: {
+    gap: spacing.md,
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.lg,
+  },
+  checkInTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  checkInDescription: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 21,
   },
   card: {
     flexDirection: 'row',
