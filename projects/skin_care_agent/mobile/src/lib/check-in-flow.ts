@@ -102,3 +102,18 @@ export function qualityFailureMessage(errorCode: string): string {
     '照片未通过质量检查，请按参考框重拍。'
   );
 }
+
+export function qualityFailureMessages(detail: unknown): string[] {
+  if (
+    typeof detail !== 'object' ||
+    detail === null ||
+    !('errors' in detail) ||
+    !Array.isArray(detail.errors)
+  ) {
+    return [];
+  }
+  const messages = detail.errors
+    .filter((errorCode): errorCode is string => typeof errorCode === 'string')
+    .map(qualityFailureMessage);
+  return [...new Set(messages)];
+}

@@ -8,6 +8,7 @@ import {
   localObservedOn,
   nextIncompleteView,
   qualityFailureMessage,
+  qualityFailureMessages,
   selectTodayStandardCheckIn,
 } from '../src/lib/check-in-flow.ts';
 
@@ -33,6 +34,24 @@ test('qualityFailureMessage translates backend quality errors', () => {
   assert.equal(qualityFailureMessage('face_not_detected'), '没有检测到完整人脸，请正对参考框重拍。');
   assert.equal(qualityFailureMessage('image_blurry'), '照片不够清晰，请保持手机稳定后重拍。');
   assert.equal(qualityFailureMessage('unknown_code'), '照片未通过质量检查，请按参考框重拍。');
+});
+
+test('qualityFailureMessages parses and deduplicates backend quality detail', () => {
+  assert.deepEqual(
+    qualityFailureMessages({
+      message: 'photo quality check failed',
+      errors: ['image_blurry', 'face_cut_off', 'image_blurry'],
+    }),
+    [
+      '照片不够清晰，请保持手机稳定后重拍。',
+      '面部被裁切，请确保额头、两颊和下巴都在画面内。',
+    ],
+  );
+});
+
+test('qualityFailureMessages ignores non-quality API detail', () => {
+  assert.deepEqual(qualityFailureMessages('invalid request'), []);
+  assert.deepEqual(qualityFailureMessages({ errors: [17, null] }), []);
 });
 test('createClientRequestId creates an RFC 4122 version 4 UUID', () => {
   assert.equal(

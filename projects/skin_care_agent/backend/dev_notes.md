@@ -1928,3 +1928,33 @@ GROUP BY region, status;
 ### 下一步
 
 - 开始 Step #9b-3：解析后端质量错误并展示针对性重拍提示，三张照片通过后完成 check-in，提供完成页，并在真实 Android 设备验证正向闭环。
+
+---
+
+## 2026-07-28 — Step #9b-3 质量反馈、完成页与真机正向闭环 — ⏸ 阻塞
+
+### 本次完成
+
+- 扩展 `mobile/src/lib/check-in-flow.ts`，解析后端质量 422 的 `errors` 列表，去重并映射为模糊、光线、人脸裁切、距离和角度等具体中文提示。
+- 扩展 `mobile/src/app/check-in.tsx`：质量失败后不再允许无意义地重复上传同一照片，而是清除失败照片并保留当前视角供重拍；网络失败仍保留本地文件与“重试上传”。
+- 第三张服务器照片存在后自动调用 `POST /check-ins/{id}/complete`；完成请求失败时保留三张照片并提供独立重试。
+- 新增当天完成状态页面，显示正面、左侧、右侧均已保存；重新进入当天 Check-in 时会优先恢复服务器已完成项，不再创建或打开新的拍摄流程。
+
+### 验证情况
+
+- 先新增质量详情解析失败测试，缺少导出时按预期失败；实现后移动端单元测试 21 passed。
+- 移动端 `npm run typecheck`、`npm exec eslint . -- --no-cache` 和 `git diff --check` 均通过。
+- Pixel 8 API 36 模拟器实际拍摄后，页面正确显示后端返回的三项具体提示：光线极端、明暗裁切和未检测到完整人脸；不再显示通用 422 文案，页面内容与快门无重叠。
+- 后端 Ruff 全量检查通过；完整 pytest 回归 42 passed，保留 1 条既有 Starlette/httpx2 弃用警告。
+
+### 当前阻塞或遗留
+
+- `adb devices` 当前只有 Pixel 8 模拟器；虚拟相机没有真人面部，所有照片都会被后端质量门槛正确拒绝。
+- 尚未获得真实 Android 前置相机的三张合规照片，因此 front → left → right 正向推进、三张成功落库、自动 complete 和完成页仍待真机运行验证；不得将 Step #9b 整体标记为已完成。
+- 本地账号 `qa.camera.20260728.1724@openai.com` 留有一个当天 standard draft，但没有成功落库的照片。
+
+### 下一步
+
+- 用户连接一台启用 USB 调试的 Android 真机，并确认 `adb devices -l` 显示该设备为 `device`。
+- 真机联调时将忽略提交的 `mobile/.env` 临时改为 `EXPO_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1`，执行 `adb reverse tcp:8000 tcp:8000` 和 `adb reverse tcp:8081 tcp:8081`，重启 Metro 后打开 Expo Go。
+- 使用真实前置相机依次完成正面、左侧、右侧照片，验证质量反馈后的重拍、自动完成、完成页和重新进入后的已完成恢复；通过后分别追加 #9b-2 与 #9b-3 完成记录。

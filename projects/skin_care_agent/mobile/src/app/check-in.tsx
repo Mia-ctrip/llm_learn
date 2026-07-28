@@ -20,6 +20,7 @@ import { colors, spacing } from '@/constants/theme';
 import { cameraPermissionState } from '@/lib/camera-permission';
 import {
   buildPhotoUploadForm,
+  completeCheckIn,
   createStandardCheckIn,
   getCheckIn,
   listCheckIns,
@@ -33,8 +34,10 @@ import {
   localObservedOn,
   nextIncompleteView,
   selectTodayStandardCheckIn,
+  qualityFailureMessages,
 } from '@/lib/check-in-flow';
 import type { CheckInViewType } from '@/lib/check-in-flow';
+import { ApiError } from '@/lib/api';
 import { userFacingError } from '@/lib/errors';
 import { useSession } from '@/providers/session-provider';
 
@@ -45,7 +48,7 @@ type PendingCapture = {
   clientRequestId: string;
 };
 
-type Operation = 'idle' | 'capturing' | 'uploading';
+type Operation = 'idle' | 'capturing' | 'uploading' | 'completing';
 
 export default function CheckInScreen() {
   const { request } = useSession();
@@ -59,6 +62,7 @@ export default function CheckInScreen() {
   const [pendingCapture, setPendingCapture] = useState<PendingCapture | null>(
     null,
   );
+  const [qualityMessages, setQualityMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView | null>(null);
   const checkInRequestId = useRef(createClientRequestId());
@@ -88,6 +92,8 @@ export default function CheckInScreen() {
   const loadTodayCheckIn = useCallback(async () => {
     setInitializing(true);
     setError(null);
+    setQualityMessages([]);
+    setPendingCapture(null);
     try {
       const observedOn = localObservedOn();
       const recent = await listCheckIns(request);
@@ -141,6 +147,7 @@ export default function CheckInScreen() {
     }
     setOperation('uploading');
     setError(null);
+    setQualityMessages([]);
     try {
       const form = buildPhotoUploadForm({
         file: new File(capture.uri),
@@ -153,8 +160,41 @@ export default function CheckInScreen() {
       const refreshed = await getCheckIn(request, checkIn.check_in_id);
       setCheckIn(refreshed);
       setPendingCapture(null);
+      if (
+        refreshed.status === 'draft' &&
+        nextIncompleteView(capturedCheckInViews(refreshed.photos)) === null
+      ) {
+        setOperation('completing');
+        const completed = await completeCheckIn(request, refreshed.check_in_id);
+        setCheckIn(completed);
+      }
     } catch (uploadError) {
-      setError(userFacingError(uploadError));
+      const feedback =
+        uploadError instanceof ApiError && uploadError.status === 422
+          ? qualityFailureMessages(uploadError.detail)
+          : [];
+      if (feedback.length > 0) {
+        setQualityMessages(feedback);
+        setPendingCapture(null);
+      } else {
+        setError(userFacingError(uploadError));
+      }
+    } finally {
+      setOperation('idle');
+    }
+  }
+
+  async function finishCheckIn() {
+    if (!checkIn || busy) {
+      return;
+    }
+    setOperation('completing');
+    setError(null);
+    try {
+      const completed = await completeCheckIn(request, checkIn.check_in_id);
+      setCheckIn(completed);
+    } catch (completeError) {
+      setError(userFacingError(completeError));
     } finally {
       setOperation('idle');
     }
@@ -172,6 +212,7 @@ export default function CheckInScreen() {
     }
     setOperation('capturing');
     setError(null);
+    setQualityMessages([]);
     try {
       const picture = await cameraRef.current.takePictureAsync({
         quality: 0.9,
@@ -227,6 +268,27 @@ export default function CheckInScreen() {
           />
           <AppButton label="返回首页" variant="text" onPress={() => router.back()} />
         </View>
+      </AppScreen>
+    );
+  }
+
+  if (checkIn?.status === 'complete') {
+    return (
+      <AppScreen>
+        <BrandHeader
+          eyebrow="TODAY COMPLETE"
+          title="今日 Check-in 已完成"
+          description="正面、左侧和右侧照片已通过质量检查并保存。"
+        />
+        <View style={styles.completedViews}>
+          {CHECK_IN_VIEWS.map((view) => (
+            <View key={view.type} style={styles.completedView}>
+              <Text style={styles.completedViewLabel}>{view.label}</Text>
+              <Text style={styles.completedViewState}>已保存</Text>
+            </View>
+          ))}
+        </View>
+        <AppButton label="返回首页" onPress={() => router.back()} />
       </AppScreen>
     );
   }
@@ -297,6 +359,11 @@ export default function CheckInScreen() {
               <Text style={styles.instructionText}>
                 {currentView.instruction}
               </Text>
+              {qualityMessages.map((message) => (
+                <Text key={message} style={styles.captureError}>
+                  {message}
+                </Text>
+              ))}
               {error ? <Text style={styles.captureError}>{error}</Text> : null}
               {pendingCapture && error ? (
                 <View style={styles.retryRow}>
@@ -316,6 +383,7 @@ export default function CheckInScreen() {
                     onPress={() => {
                       setPendingCapture(null);
                       setError(null);
+                      setQualityMessages([]);
                     }}
                     style={({ pressed }) => [
                       styles.retakeButton,
@@ -358,10 +426,12 @@ export default function CheckInScreen() {
               <Text style={styles.instructionText}>
                 正面、左侧和右侧照片均已保存。
               </Text>
+              {error ? <Text style={styles.captureError}>{error}</Text> : null}
               <AppButton
-                label="返回首页"
+                label="完成今日 Check-in"
                 variant="secondary"
-                onPress={() => router.back()}
+                loading={operation === 'completing'}
+                onPress={() => void finishCheckIn()}
               />
             </>
           )}
@@ -386,6 +456,30 @@ const styles = StyleSheet.create({
   permissionActions: {
     gap: spacing.sm,
     marginTop: spacing.xxl,
+  },
+  completedViews: {
+    marginTop: spacing.xxl,
+    marginBottom: spacing.xxl,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  completedView: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  completedViewLabel: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  completedViewState: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
   },
   cameraScreen: {
     flex: 1,
