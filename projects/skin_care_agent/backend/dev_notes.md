@@ -1898,3 +1898,33 @@ GROUP BY region, status;
 ### 下一步
 
 - 开始 Step #9b-2：创建或恢复当天 standard check-in，接入正面、左侧、右侧拍摄与上传，支持幂等请求、失败重试和中断后恢复。
+
+---
+
+## 2026-07-28 — Step #9b-2 三视角拍摄、上传、恢复与重试 — 🚧 进行中
+
+### 本次完成
+
+- 扩展 `mobile/src/lib/check-in-api.ts`，新增最近 check-in 列表和单个 check-in 刷新请求。
+- 扩展 `mobile/src/lib/check-in-flow.ts`，实现当天 standard check-in 选择、已拍视角提取和服务端进度恢复；同一天存在已完成项时优先返回已完成项，避免重复创建。
+- 扩展 `mobile/src/app/check-in.tsx`，实现当天 draft 创建/恢复、相机就绪控制、拍照、multipart 上传、服务器照片刷新和 front → left → right 自动推进。
+- 上传失败时保留本地照片 URI 与固定 `client_request_id`，支持同一文件幂等重试或放弃后重新拍摄。
+- 定位并修复 Expo SDK 57 文件上传兼容问题：SDK 57 的全局 `fetch` 使用 `expo/fetch`，旧式 `{ uri, name, type }` 文件对象不会被编码为 multipart；改为使用 `expo-file-system` 的标准 `File` 对象。
+- `expo-file-system 57.0.1` 原本已由 Expo 安装并存在于锁文件，本次仅将其显式声明为移动端直接依赖，未执行依赖安装命令。
+
+### 验证情况
+
+- 先新增恢复和查询契约失败测试，缺少导出时按预期失败；实现后移动端单元测试 19 passed。
+- `npm run typecheck`、`npm exec eslint . -- --no-cache` 和 `npm ls expo-file-system --depth=0` 均通过。
+- Pixel 8 API 36 模拟器首次进入时执行 `GET /check-ins` 和 `POST /check-ins`，成功创建当天 standard draft；重启 Metro 和 Expo Go 后只执行 `GET /check-ins` 并恢复同一 draft，没有重复创建。
+- 修正文件上传前，拍照后请求在客户端失败且后端未收到 `/photos`；改用 SDK 57 `File` 后，后端连续收到 `POST /api/v1/photos` 并返回 422，证明相机文件 multipart、认证和 API 地址链路已接通。
+- 页面在质量失败后显示“重试上传”和“重新拍摄”；重试会再次上传保留文件，重新拍摄会清除待重试状态并恢复正面快门。
+
+### 当前阻塞或遗留
+
+- Android 模拟器虚拟相机只输出彩色测试场景，后端人脸质量门槛会正确拒绝，无法在当前模拟器验证照片通过后的左侧/右侧自动推进和三张成功落库。
+- 正向上传、三视角推进和完成 check-in 需要在 Step #9b-3 使用真实 Android 相机验证；验证前本子步骤保持“进行中”。
+
+### 下一步
+
+- 开始 Step #9b-3：解析后端质量错误并展示针对性重拍提示，三张照片通过后完成 check-in，提供完成页，并在真实 Android 设备验证正向闭环。

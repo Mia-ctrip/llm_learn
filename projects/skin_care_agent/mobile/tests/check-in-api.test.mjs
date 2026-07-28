@@ -5,6 +5,8 @@ import {
   buildPhotoUploadForm,
   completeCheckIn,
   createStandardCheckIn,
+  getCheckIn,
+  listCheckIns,
   uploadCheckInPhoto,
 } from '../src/lib/check-in-api.ts';
 
@@ -99,4 +101,28 @@ test('completeCheckIn posts to the selected check-in', async () => {
       init: { method: 'POST' },
     },
   ]);
+});
+
+test('listCheckIns requests recent server state', async () => {
+  const calls = [];
+  const request = async (path, init) => {
+    calls.push({ path, init });
+    return [];
+  };
+
+  assert.deepEqual(await listCheckIns(request), []);
+  assert.deepEqual(calls, [{ path: '/check-ins?limit=30', init: undefined }]);
+});
+
+test('getCheckIn reloads photos for one check-in', async () => {
+  const calls = [];
+  const request = async (path, init) => {
+    calls.push({ path, init });
+    return { check_in_id: 17, photos: [] };
+  };
+
+  const result = await getCheckIn(request, 17);
+
+  assert.equal(result.check_in_id, 17);
+  assert.deepEqual(calls, [{ path: '/check-ins/17', init: undefined }]);
 });

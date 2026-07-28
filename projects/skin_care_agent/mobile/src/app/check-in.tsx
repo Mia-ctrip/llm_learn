@@ -1,6 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { File } from 'expo-file-system';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -17,22 +18,100 @@ import { BrandHeader } from '@/components/brand-header';
 import { InlineNotice } from '@/components/inline-notice';
 import { colors, spacing } from '@/constants/theme';
 import { cameraPermissionState } from '@/lib/camera-permission';
-import { CHECK_IN_VIEWS } from '@/lib/check-in-flow';
+import {
+  buildPhotoUploadForm,
+  createStandardCheckIn,
+  getCheckIn,
+  listCheckIns,
+  uploadCheckInPhoto,
+} from '@/lib/check-in-api';
+import type { CheckIn } from '@/lib/check-in-api';
+import {
+  capturedCheckInViews,
+  CHECK_IN_VIEWS,
+  createClientRequestId,
+  localObservedOn,
+  nextIncompleteView,
+  selectTodayStandardCheckIn,
+} from '@/lib/check-in-flow';
+import type { CheckInViewType } from '@/lib/check-in-flow';
 import { userFacingError } from '@/lib/errors';
+import { useSession } from '@/providers/session-provider';
+
+type PendingCapture = {
+  uri: string;
+  takenAt: string;
+  viewType: CheckInViewType;
+  clientRequestId: string;
+};
+
+type Operation = 'idle' | 'capturing' | 'uploading';
 
 export default function CheckInScreen() {
+  const { request } = useSession();
   const [permission, requestPermission] = useCameraPermissions();
   const [focused, setFocused] = useState(false);
   const [requesting, setRequesting] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [checkIn, setCheckIn] = useState<CheckIn | null>(null);
+  const [operation, setOperation] = useState<Operation>('idle');
+  const [pendingCapture, setPendingCapture] = useState<PendingCapture | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
+  const cameraRef = useRef<CameraView | null>(null);
+  const checkInRequestId = useRef(createClientRequestId());
   const permissionState = cameraPermissionState(permission);
-  const currentView = CHECK_IN_VIEWS[0];
+  const capturedViews = useMemo(
+    () => capturedCheckInViews(checkIn?.photos ?? []),
+    [checkIn?.photos],
+  );
+  const nextViewType = nextIncompleteView(capturedViews);
+  const currentView =
+    CHECK_IN_VIEWS.find((view) => view.type === nextViewType) ?? null;
+  const currentStep = currentView
+    ? CHECK_IN_VIEWS.findIndex((view) => view.type === currentView.type) + 1
+    : CHECK_IN_VIEWS.length;
+  const busy = operation !== 'idle';
 
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
-      return () => setFocused(false);
+      return () => {
+        setFocused(false);
+        setCameraReady(false);
+      };
     }, []),
+  );
+
+  const loadTodayCheckIn = useCallback(async () => {
+    setInitializing(true);
+    setError(null);
+    try {
+      const observedOn = localObservedOn();
+      const recent = await listCheckIns(request);
+      const existing = selectTodayStandardCheckIn(recent, observedOn);
+      const todayCheckIn =
+        existing ??
+        (await createStandardCheckIn(request, {
+          observedOn,
+          clientRequestId: checkInRequestId.current,
+        }));
+      setCheckIn(todayCheckIn);
+    } catch (loadError) {
+      setError(userFacingError(loadError));
+    } finally {
+      setInitializing(false);
+    }
+  }, [request]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (permissionState === 'granted') {
+        void loadTodayCheckIn();
+      }
+    }, [loadTodayCheckIn, permissionState]),
   );
 
   async function askForPermission() {
@@ -53,6 +132,65 @@ export default function CheckInScreen() {
       await Linking.openSettings();
     } catch (settingsError) {
       setError(userFacingError(settingsError));
+    }
+  }
+
+  async function uploadCapture(capture: PendingCapture) {
+    if (!checkIn) {
+      return;
+    }
+    setOperation('uploading');
+    setError(null);
+    try {
+      const form = buildPhotoUploadForm({
+        file: new File(capture.uri),
+        takenAt: capture.takenAt,
+        checkInId: checkIn.check_in_id,
+        viewType: capture.viewType,
+        clientRequestId: capture.clientRequestId,
+      });
+      await uploadCheckInPhoto(request, form);
+      const refreshed = await getCheckIn(request, checkIn.check_in_id);
+      setCheckIn(refreshed);
+      setPendingCapture(null);
+    } catch (uploadError) {
+      setError(userFacingError(uploadError));
+    } finally {
+      setOperation('idle');
+    }
+  }
+
+  async function takePhoto() {
+    if (
+      !cameraRef.current ||
+      !cameraReady ||
+      !checkIn ||
+      !currentView ||
+      busy
+    ) {
+      return;
+    }
+    setOperation('capturing');
+    setError(null);
+    try {
+      const picture = await cameraRef.current.takePictureAsync({
+        quality: 0.9,
+        skipProcessing: false,
+      });
+      if (!picture?.uri) {
+        throw new Error('Camera did not return a photo');
+      }
+      const capture: PendingCapture = {
+        uri: picture.uri,
+        takenAt: new Date().toISOString(),
+        viewType: currentView.type,
+        clientRequestId: createClientRequestId(),
+      };
+      setPendingCapture(capture);
+      await uploadCapture(capture);
+    } catch (captureError) {
+      setError(userFacingError(captureError));
+      setOperation('idle');
     }
   }
 
@@ -97,9 +235,14 @@ export default function CheckInScreen() {
     <View style={styles.cameraScreen}>
       {focused ? (
         <CameraView
+          ref={cameraRef}
           facing="front"
           mirror={false}
           mode="picture"
+          onCameraReady={() => setCameraReady(true)}
+          onMountError={() =>
+            setError('相机预览启动失败，请返回后重新进入。')
+          }
           style={StyleSheet.absoluteFill}
         />
       ) : null}
@@ -118,7 +261,11 @@ export default function CheckInScreen() {
           </Pressable>
           <View style={styles.progressCopy}>
             <Text style={styles.progressLabel}>今日 Check-in</Text>
-            <Text style={styles.progressValue}>1 / 3 · {currentView.label}</Text>
+            <Text style={styles.progressValue}>
+              {currentView
+                ? `${currentStep} / 3 · ${currentView.label}`
+                : '3 / 3 · 已拍摄'}
+            </Text>
           </View>
           <View style={styles.topSpacer} />
         </View>
@@ -128,8 +275,96 @@ export default function CheckInScreen() {
         </View>
 
         <View style={styles.instruction}>
-          <Text style={styles.instructionTitle}>{currentView.label}</Text>
-          <Text style={styles.instructionText}>{currentView.instruction}</Text>
+          {initializing ? (
+            <View style={styles.operationRow}>
+              <ActivityIndicator color={colors.white} />
+              <Text style={styles.operationText}>正在恢复今日进度</Text>
+            </View>
+          ) : !checkIn ? (
+            <>
+              <Text style={styles.captureError}>
+                {error ?? '无法读取今日 Check-in。'}
+              </Text>
+              <AppButton
+                label="重新加载"
+                variant="secondary"
+                onPress={() => void loadTodayCheckIn()}
+              />
+            </>
+          ) : currentView ? (
+            <>
+              <Text style={styles.instructionTitle}>{currentView.label}</Text>
+              <Text style={styles.instructionText}>
+                {currentView.instruction}
+              </Text>
+              {error ? <Text style={styles.captureError}>{error}</Text> : null}
+              {pendingCapture && error ? (
+                <View style={styles.retryRow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => void uploadCapture(pendingCapture)}
+                    style={({ pressed }) => [
+                      styles.retryButton,
+                      pressed && styles.overlayPressed,
+                    ]}>
+                    <Text style={styles.retryLabel}>重试上传</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => {
+                      setPendingCapture(null);
+                      setError(null);
+                    }}
+                    style={({ pressed }) => [
+                      styles.retakeButton,
+                      pressed && styles.overlayPressed,
+                    ]}>
+                    <Text style={styles.retakeLabel}>重新拍摄</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  accessibilityLabel={`拍摄${currentView.label}照片`}
+                  accessibilityRole="button"
+                  disabled={
+                    !cameraReady || !checkIn || busy || Boolean(pendingCapture)
+                  }
+                  onPress={() => void takePhoto()}
+                  style={({ pressed }) => [
+                    styles.shutterOuter,
+                    pressed && styles.overlayPressed,
+                    (!cameraReady || !checkIn || busy) &&
+                      styles.shutterDisabled,
+                  ]}>
+                  {busy ? (
+                    <ActivityIndicator color={colors.text} />
+                  ) : (
+                    <View style={styles.shutterInner} />
+                  )}
+                </Pressable>
+              )}
+              {operation === 'capturing' ? (
+                <Text style={styles.operationText}>正在拍摄</Text>
+              ) : null}
+              {operation === 'uploading' ? (
+                <Text style={styles.operationText}>正在上传并检查照片</Text>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Text style={styles.instructionTitle}>三视角照片已上传</Text>
+              <Text style={styles.instructionText}>
+                正面、左侧和右侧照片均已保存。
+              </Text>
+              <AppButton
+                label="返回首页"
+                variant="secondary"
+                onPress={() => router.back()}
+              />
+            </>
+          )}
         </View>
       </SafeAreaView>
     </View>
@@ -231,5 +466,71 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     textAlign: 'center',
+  },
+  operationRow: {
+    minHeight: 88,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  operationText: {
+    color: '#E6ECE8',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  captureError: {
+    color: '#FFD4D0',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  shutterOuter: {
+    width: 78,
+    height: 78,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: colors.white,
+    borderRadius: 39,
+  },
+  shutterInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.white,
+  },
+  shutterDisabled: {
+    opacity: 0.5,
+  },
+  retryRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  retryButton: {
+    minHeight: 48,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+  },
+  retryLabel: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  retakeButton: {
+    minHeight: 48,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.white,
+  },
+  retakeLabel: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

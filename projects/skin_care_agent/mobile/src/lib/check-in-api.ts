@@ -56,7 +56,7 @@ type CreateCheckInInput = {
 export type NativePhotoFile = {
   uri: string;
   name: string;
-  type: 'image/jpeg';
+  type: string;
 };
 
 type PhotoUploadInput = {
@@ -83,6 +83,19 @@ export async function createStandardCheckIn(
       client_request_id: input.clientRequestId,
     }),
   });
+}
+
+export async function listCheckIns(
+  request: AuthenticatedRequest,
+): Promise<CheckIn[]> {
+  return request<CheckIn[]>('/check-ins?limit=30');
+}
+
+export async function getCheckIn(
+  request: AuthenticatedRequest,
+  checkInId: number,
+): Promise<CheckIn> {
+  return request<CheckIn>(`/check-ins/${checkInId}`);
 }
 
 export function buildPhotoUploadForm(

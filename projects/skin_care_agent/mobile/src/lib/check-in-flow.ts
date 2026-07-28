@@ -53,6 +53,42 @@ export function localObservedOn(now: Date = new Date()): string {
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+type CheckInCandidate = {
+  check_in_id: number;
+  observed_on: string;
+  kind: string;
+  status: string;
+};
+
+export function selectTodayStandardCheckIn<T extends CheckInCandidate>(
+  checkIns: readonly T[],
+  observedOn: string,
+): T | null {
+  const todayStandard = checkIns.filter(
+    (checkIn) =>
+      checkIn.observed_on === observedOn && checkIn.kind === 'standard',
+  );
+  return (
+    todayStandard.find((checkIn) => checkIn.status === 'complete') ??
+    todayStandard.find((checkIn) => checkIn.status === 'draft') ??
+    null
+  );
+}
+
+type CheckInPhotoCandidate = {
+  view_type: string | null;
+};
+
+export function capturedCheckInViews(
+  photos: readonly CheckInPhotoCandidate[],
+): CheckInViewType[] {
+  const captured = new Set(photos.map((photo) => photo.view_type));
+  return CHECK_IN_VIEWS.filter((view) => captured.has(view.type)).map(
+    (view) => view.type,
+  );
+}
+
 export function nextIncompleteView(
   capturedViews: readonly CheckInViewType[],
 ): CheckInViewType | null {

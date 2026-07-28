@@ -4,9 +4,11 @@ import test from 'node:test';
 import {
   CHECK_IN_VIEWS,
   createClientRequestId,
+  capturedCheckInViews,
   localObservedOn,
   nextIncompleteView,
   qualityFailureMessage,
+  selectTodayStandardCheckIn,
 } from '../src/lib/check-in-flow.ts';
 
 test('standard check-in uses front, left, right order', () => {
@@ -45,4 +47,66 @@ test('createClientRequestId creates an RFC 4122 version 4 UUID', () => {
 
 test('localObservedOn uses the device local calendar date', () => {
   assert.equal(localObservedOn(new Date(2026, 6, 5, 23, 59)), '2026-07-05');
+});
+
+test('selectTodayStandardCheckIn resumes the latest draft', () => {
+  const checkIns = [
+    {
+      check_in_id: 9,
+      observed_on: '2026-07-28',
+      kind: 'quick',
+      status: 'draft',
+    },
+    {
+      check_in_id: 8,
+      observed_on: '2026-07-28',
+      kind: 'standard',
+      status: 'draft',
+    },
+    {
+      check_in_id: 7,
+      observed_on: '2026-07-27',
+      kind: 'standard',
+      status: 'draft',
+    },
+  ];
+
+  assert.equal(
+    selectTodayStandardCheckIn(checkIns, '2026-07-28')?.check_in_id,
+    8,
+  );
+});
+
+test('selectTodayStandardCheckIn does not create another entry after completion', () => {
+  const checkIns = [
+    {
+      check_in_id: 12,
+      observed_on: '2026-07-28',
+      kind: 'standard',
+      status: 'draft',
+    },
+    {
+      check_in_id: 11,
+      observed_on: '2026-07-28',
+      kind: 'standard',
+      status: 'complete',
+    },
+  ];
+
+  assert.equal(
+    selectTodayStandardCheckIn(checkIns, '2026-07-28')?.check_in_id,
+    11,
+  );
+});
+
+test('capturedCheckInViews ignores duplicate and unsupported photo views', () => {
+  assert.deepEqual(
+    capturedCheckInViews([
+      { view_type: 'right' },
+      { view_type: null },
+      { view_type: 'front' },
+      { view_type: 'right' },
+    ]),
+    ['front', 'right'],
+  );
 });
