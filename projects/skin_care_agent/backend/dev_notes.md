@@ -1793,3 +1793,30 @@ GROUP BY region, status;
 - 用户重启电脑后重新进入项目会话。
 - 验证 `emulator -accel-check`、启动 `Pixel_8`，并确认 `adb devices` 显示 `emulator-xxxx device`。
 - 随后启动后端和 Expo，在 Android 模拟器中完成 Step #9a 账号与协议闭环。
+
+---
+
+## 2026-07-28 — Android API 36 模拟器环境 — ✅ 已完成
+
+### 本次完成
+
+- Windows 重启后确认 Hypervisor Platform 已正式生效。
+- 启动 `Pixel_8` AVD，并等待 Android 系统完成启动。
+- 建立 `adb` 连接，Android 模拟器已具备后续 Expo 页面联调条件。
+
+### 验证情况
+
+- `Get-WindowsOptionalFeature -FeatureName HypervisorPlatform` 返回 Enabled。
+- `emulator -accel-check` 返回 `WHPX(10.0.26200) is installed and usable`。
+- `adb devices -l` 显示 `emulator-5554 device`。
+- `sys.boot_completed=1`，系统版本为 Android 16、API 36。
+- `ANDROID_HOME`、`ANDROID_SDK_ROOT`、`JAVA_HOME` 以及用户 PATH 已在重启后保留。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 启动 PostgreSQL、FastAPI 和 Expo Metro。
+- 在 Pixel 8 API 36 模拟器中验证注册、首次协议、会话恢复、Token 轮换和登出，收口 Step #9a。
