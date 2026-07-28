@@ -1571,3 +1571,136 @@ GROUP BY region, status;
 - 用户手动从 Android Studio 官方页面下载安装器，以 Standard 模式安装 Android SDK Platform 36、Platform-Tools、Build-Tools 和 Android Emulator。
 - 用户在 Device Manager 创建并启动 API 36 Pixel AVD，随后在新 PowerShell 中验证 `adb devices`。
 - 模拟器就绪后运行 `npx expo start` 并按 `a`，完成注册、协议、会话恢复和登出的端到端页面验证，再收口 Step #9a。
+
+---
+
+## 2026-07-27 — 项目真实进度与移动端主线校准 — 🚧 进行中
+
+### 本次完成
+
+- 以当前 `main` 分支代码、最近提交和唯一进度日志为依据重新校准项目状态；本次只校准进度，不修改业务代码。
+- 后端现状保持不变：账号与协议、多用户隔离、check-in、三视角照片、质量门槛、AI 分析、日记、趋势和 patch lineage 等 MVP 服务端能力已经实现；最近一次有记录的完整回归为 42 个测试通过，数据库迁移为 `0012_app_foundation`。
+- 移动端 Step #9a 已实现 Expo SDK 57 工程骨架、注册、登录、Access/Refresh Token 会话恢复与轮换、Refresh Token 安全存储、首次四项协议、受保护路由、基础组件和占位首页；真实 HTTP 账号闭环此前已验证。
+- 确认 Step #9b 已存在一个可独立验证的前置子步骤：
+  - `mobile/src/lib/check-in-flow.ts` 已定义 front / left / right 三视角顺序、本地日期、请求 UUID、下一待拍视角和后端质量错误文案；
+  - `mobile/src/lib/check-in-api.ts` 已封装标准 check-in 创建、带幂等字段的照片 multipart 上传和 check-in 完成请求；
+  - `mobile/tests/check-in-flow.test.mjs` 与 `mobile/tests/check-in-api.test.mjs` 已覆盖上述纯逻辑和请求契约。
+- 明确上述 Step #9b 内容仅为领域逻辑与 API 适配层，不代表三视角拍照功能完成；当前没有 check-in 页面、相机权限与取景组件、三视角拍摄状态机、上传进度/失败重试、质量不通过后的重拍交互，也没有分析、日记、趋势和生命周期客户端页面。
+- 将当前唯一开发主线收敛为：先恢复可运行的移动端验证环境并收口 Step #9a，再完成 Step #9b 的“创建 check-in → 三视角拍照 → 上传与质量反馈 → 完成 check-in”首条真机闭环；Figma 研究板、视觉扩展和非主线功能暂不阻塞该主线。
+
+### 验证情况
+
+- `git status --short` 为空，当前工作树在校准前无未提交修改；当前分支为 `main`，HEAD 为 `7603965`。
+- 静态检索确认移动端当前仅有 `index / login / register / consents / home` 五类业务路由，尚无 check-in 或相机页面；`expo-camera` 已在依赖声明中。
+- 本次尝试执行 `npm run test:unit`，当前 Node 运行时不支持 `--experimental-strip-types` 和 `--test-isolation=none`，测试未运行。
+- 本次尝试执行 `npm run typecheck`，当前环境无法找到本地 `tsc`；尝试执行无缓存 ESLint 时，本机 npm 环境缺少预期目录，均未获得新的通过证据。
+- 因当前依赖/Node 环境与 2026-07-20 验证环境不一致，本次只确认代码范围，不把 Step #9a 或 Step #9b 标记为已完成；2026-07-20 已记录的历史验证结果继续保留。
+
+### 当前阻塞或遗留
+
+- 当前移动端 Node/依赖执行环境不可用，需要先确认项目要求的 Node 版本并恢复现有依赖，不能擅自安装或升级。
+- Android Studio、Android SDK、adb 和 AVD 的可用状态尚未重新确认；Step #9a 仍缺 Android/iOS 真机或模拟器页面操作证据。
+- Step #9b 只有纯逻辑、API 封装与单元测试源码，尚未进入用户可操作的拍照闭环。
+- AI 分析、日记、趋势和生命周期的移动端接入均未开始。
+
+### 下一步
+
+- 第一步：检查当前 Node、npm、`mobile/node_modules`、Android SDK/adb 和可用真机状态，形成不安装依赖的环境恢复方案；需要安装或升级时先由用户确认。
+- 第二步：环境恢复后重新执行移动端 unit test、TypeScript 和 ESLint，并在 Android 真机或模拟器上完成注册、协议、会话恢复和登出验证，收口 Step #9a。
+- 第三步：在现有 `check-in-flow` 与 `check-in-api` 基础上实现 check-in 页面和三视角相机闭环；该闭环通过真机验证后，再接 AI 分析结果与日记。
+
+---
+
+## 2026-07-27 — 新电脑环境构建文档 — ✅ 已完成
+
+### 本次完成
+
+- 新增 `docs/environment_setup.md`，作为新电脑从零配置本项目的主环境文档。
+- 文档覆盖 Windows 本地开发所需的 Git、Python 3.11+、uv、PostgreSQL 16、Node.js 22.13.x、Expo SDK 57、JDK 17、Android Studio、Android SDK 36、AVD、后端 `.env`、移动端 `.env`、数据库迁移、人脸关键点模型下载、后端启动、客户端启动、真机/模拟器调试和上云前环境准备方向。
+- 明确当前项目后端不能按 Python 3.10 配置，需使用 `backend/pyproject.toml` 要求的 Python 3.11+；移动端需匹配 Expo SDK 57 的 Node 22.13.x。
+
+### 验证情况
+
+- 已读取 `backend/README.md`、`backend/pyproject.toml`、`backend/.env.example`、`mobile/package.json`、`mobile/.env.example`、`mobile/app.json` 和 `mobile/AGENTS.md`，并按实际项目依赖编写。
+- 已核对 Expo SDK 57 官方版本表，确认其对应 React Native 0.86、React 19.2.3、Android SDK 36 和最低 Node.js 22.13.x。
+- 本次只新增 Markdown 文档并追加开发日志，不涉及代码、数据库迁移或依赖安装，因此未运行后端或客户端测试。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 用户按 `docs/environment_setup.md` 在新电脑完成环境配置。
+- 环境可用后重新执行后端 Ruff/pytest、移动端 typecheck/unit test，并在 Android 模拟器或真机完成账号与协议闭环验证。
+
+---
+
+## 2026-07-27 — 新电脑环境构建文档补充安装教程 — ✅ 已完成
+
+### 本次完成
+
+- 根据用户反馈补充 `docs/environment_setup.md`，将原先偏“安装后验证”的内容扩展为可直接照做的安装教程。
+- 为 Git、Python 3.11+、uv、Node.js 22、VS Code、Docker Desktop、PostgreSQL 16、Microsoft OpenJDK 17、Android Studio、Android SDK 36、AVD 和 Android 环境变量补充下载地址、安装选项、安装步骤和常见 PATH 注意事项。
+- 保留原有后端、移动端、数据库迁移、模型下载、启动和上云准备内容。
+
+### 验证情况
+
+- 已核对官方来源：Git for Windows、Python Windows downloads、Astral uv 安装文档、Node.js 下载页、PostgreSQL Windows installers、Microsoft OpenJDK 下载/安装文档、Android Studio 安装文档、Expo SDK 57 版本表。
+- 本次只修改 Markdown 文档和追加开发日志，不涉及代码、数据库迁移或依赖安装，因此未运行后端或客户端测试。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 用户按 `docs/environment_setup.md` 从系统软件安装开始配置新电脑。
+- 如安装过程中某一步报错，优先带上命令输出或截图继续定位。
+
+---
+
+## 2026-07-27 — 新电脑环境构建文档补充命令安装方式 — ✅ 已完成
+
+### 本次完成
+
+- 根据用户反馈补充 `docs/environment_setup.md`，对可用命令安装的系统工具增加 PowerShell/winget 指令。
+- 新增 Git、Python 3.11/3.12、uv、Node.js LTS、VS Code、Docker Desktop、Microsoft OpenJDK 17、Android Studio 的命令安装方式。
+- 对 PostgreSQL 16 明确说明：更建议图形安装器，因为首次配置需要设置 `postgres` 密码、端口和组件；同时保留 winget 尝试命令和 Docker 数据库命令路线。
+
+### 验证情况
+
+- 本次只修改 Markdown 文档和追加开发日志，不执行安装命令、不安装依赖、不改业务代码。
+- 尚未在新电脑实际执行这些安装命令，命令有效性需在用户目标机器上验证。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 用户优先按文档中的命令安装；若 winget 安装失败，再切换到对应官网下载页面。
+
+---
+
+## 2026-07-27 — 新电脑环境构建文档命令化重整 — ✅ 已完成
+
+### 本次完成
+
+- 按用户要求重整 `docs/environment_setup.md`，删除复杂的网页登录下载方式和下载地址描述。
+- 文档改为命令优先结构，只保留 PowerShell、winget、Docker、npm、uv、alembic、Expo 等可直接执行的配置指令。
+- Android Studio 保留安装后的 SDK Manager、API 36、AVD 配置步骤，因为这些步骤需要在 Android Studio 内完成，无法完全替换为项目内命令。
+- PostgreSQL 保留 Docker 命令方案为推荐方案，同时保留 winget 安装 PostgreSQL 的备选命令。
+
+### 验证情况
+
+- 本次只修改 Markdown 文档和追加开发日志，不执行安装命令、不安装依赖、不改业务代码。
+- 尚未在新电脑实际执行这些安装命令，命令有效性需在用户目标机器上验证。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 用户按命令化后的 `docs/environment_setup.md` 从 `winget --version` 开始配置新电脑。
