@@ -177,6 +177,7 @@ export default function CheckInScreen() {
         setOperation('completing');
         const completed = await completeCheckIn(request, refreshed.check_in_id);
         setCheckIn(completed);
+        router.replace(`/analysis/${completed.check_in_id}`);
       }
     } catch (uploadError) {
       const feedback =
@@ -203,6 +204,7 @@ export default function CheckInScreen() {
     try {
       const completed = await completeCheckIn(request, checkIn.check_in_id);
       setCheckIn(completed);
+      router.replace(`/analysis/${completed.check_in_id}`);
     } catch (completeError) {
       setError(userFacingError(completeError));
     } finally {
@@ -305,7 +307,19 @@ export default function CheckInScreen() {
             </View>
           ))}
         </View>
-        <AppButton label="返回首页" onPress={() => router.back()} />
+        <View style={styles.completedActions}>
+          <AppButton
+            label="查看分析结果"
+            onPress={() =>
+              router.replace(`/analysis/${checkIn.check_in_id}`)
+            }
+          />
+          <AppButton
+            label="返回首页"
+            variant="text"
+            onPress={() => router.back()}
+          />
+        </View>
       </AppScreen>
     );
   }
@@ -497,6 +511,9 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 14,
     fontWeight: '700',
+  },
+  completedActions: {
+    gap: spacing.sm,
   },
   cameraScreen: {
     flex: 1,

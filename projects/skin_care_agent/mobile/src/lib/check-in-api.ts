@@ -12,6 +12,27 @@ export type CheckInPhoto = {
   url_expires_at: string;
 };
 
+export type CheckInRating = 1 | 2 | 3 | 4 | 5;
+
+export type CheckInDiary = {
+  sleep_hours?: number | null;
+  sleep_quality?: CheckInRating | null;
+  stress_level?: CheckInRating | null;
+  menstrual_phase?:
+    | 'pre_period'
+    | 'during_period'
+    | 'post_period'
+    | 'not_in_period'
+    | null;
+  diet_tags?:
+    | ('spicy' | 'sugary' | 'dairy' | 'fried' | 'alcohol')[]
+    | null;
+  skincare_changed?: boolean | null;
+  new_skincare_products?: string[] | null;
+  topical_products?: string[] | null;
+  notes?: string | null;
+};
+
 export type CheckIn = {
   check_in_id: number;
   client_request_id: string | null;
@@ -20,7 +41,7 @@ export type CheckIn = {
   observed_on: string;
   completed_at: string | null;
   created_at: string;
-  diary: Record<string, unknown> | null;
+  diary: CheckInDiary | null;
   diary_updated_at: string | null;
   photo_count: number;
   photos: CheckInPhoto[];

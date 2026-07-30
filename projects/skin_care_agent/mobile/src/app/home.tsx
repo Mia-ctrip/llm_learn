@@ -12,11 +12,6 @@ import { useSession } from '@/providers/session-provider';
 
 const nextCapabilities = [
   {
-    step: '02',
-    title: '变化趋势',
-    description: '每天只形成一个主数据点，旧照片继续兼容。',
-  },
-  {
     step: '03',
     title: '区域生命周期',
     description: '追踪同一区域从仍可见、暂未见到连续未见。',
@@ -56,6 +51,28 @@ export default function HomeScreen() {
           依次拍摄正面、左侧和右侧照片，记录今天的皮肤状态。
         </Text>
         <AppButton label="开始今日 Check-in" onPress={() => router.push('/check-in')} />
+        {__DEV__ ? (
+          <AppButton
+            label="预览分析结果（开发）"
+            variant="secondary"
+            onPress={() => router.push('/analysis/9001?demo=ready')}
+          />
+        ) : null}
+      </View>
+      <View style={styles.trends}>
+        <Text style={styles.step}>02</Text>
+        <Text style={styles.checkInTitle}>变化趋势</Text>
+        <Text style={styles.checkInDescription}>
+          查看近 7、30 或 90 天的皮肤指数、外观数量变化和重点区域概览。
+        </Text>
+        <AppButton label="查看变化趋势" onPress={() => router.push('/trends')} />
+        {__DEV__ ? (
+          <AppButton
+            label="预览完整趋势（开发）"
+            variant="secondary"
+            onPress={() => router.push('/trends?demo=ready')}
+          />
+        ) : null}
       </View>
       <View style={styles.list}>
         {nextCapabilities.map((item) => (
@@ -108,6 +125,15 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     lineHeight: 21,
+  },
+  trends: {
+    gap: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
   },
   card: {
     flexDirection: 'row',

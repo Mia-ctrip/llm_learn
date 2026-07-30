@@ -28,6 +28,9 @@ function RootNavigator() {
         <Stack.Protected guard={signedIn && hasRequiredConsents}>
           <Stack.Screen name="home" />
           <Stack.Screen name="check-in" />
+          <Stack.Screen name="analysis/[checkInId]" />
+          <Stack.Screen name="diary/[checkInId]" />
+          <Stack.Screen name="trends" />
         </Stack.Protected>
       </Stack>
     </>
