@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -10,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_app_user
-from app.config import get_settings
+from app.config import BACKEND_ROOT, get_settings
 from app.db.session import get_db
 from app.models.check_in import CheckIn
 from app.models.photo import Photo
@@ -25,6 +26,7 @@ from app.services.vision.quality import (
 
 
 router = APIRouter(prefix="/photos", tags=["photos"])
+logger = logging.getLogger(__name__)
 
 _MIME_TO_EXT = {
     "image/jpeg": "jpg",
@@ -32,10 +34,27 @@ _MIME_TO_EXT = {
     "image/webp": "webp",
 }
 _VALID_VIEW_TYPES = {"front", "left", "right"}
+REJECTED_QUALITY_DIR = BACKEND_ROOT / "storage_debug" / "rejected"
 
 
 def _build_storage_key(user_id: int, ext: str, now: datetime) -> str:
     return f"photos/{user_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{uuid.uuid4().hex}.{ext}"
+
+
+def _save_rejected_quality_photo(
+    data: bytes,
+    *,
+    check_in_id: int,
+    view_type: str,
+    ext: str,
+) -> str:
+    REJECTED_QUALITY_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    path = REJECTED_QUALITY_DIR / (
+        f"{timestamp}_checkin-{check_in_id}_{view_type}_{uuid.uuid4().hex}.{ext}"
+    )
+    path.write_bytes(data)
+    return str(path)
 
 
 def _validate_check_in_target(
@@ -153,6 +172,34 @@ async def upload_photo(
                 },
             ) from e
         if not quality_result.passed:
+            rejected_path = None
+            if (
+                settings.app_env.lower() == "dev"
+                and settings.photo_quality_save_rejected_in_dev
+            ):
+                try:
+                    rejected_path = _save_rejected_quality_photo(
+                        data,
+                        check_in_id=check_in_id,
+                        view_type=view_type,
+                        ext=_MIME_TO_EXT[file.content_type],
+                    )
+                except OSError:
+                    logger.exception(
+                        "photo_quality_failed_debug_save_error "
+                        "check_in_id=%s view_type=%s",
+                        check_in_id,
+                        view_type,
+                    )
+            logger.warning(
+                "photo_quality_failed check_in_id=%s view_type=%s errors=%s "
+                "metrics=%s rejected_path=%s",
+                check_in_id,
+                view_type,
+                list(quality_result.errors),
+                quality_result.metrics,
+                rejected_path,
+            )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={

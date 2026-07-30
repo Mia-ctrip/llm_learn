@@ -535,24 +535,39 @@ npm run test:unit
 
 ### 10.1 Android 模拟器
 
-先启动后端，再执行：
+先启动后端和 Android 模拟器，等待 `adb devices` 中的设备状态为
+`device`。
+
+Metro 尚未运行时，在移动端目录执行：
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent\mobile
-npm run android
+adb wait-for-device
+adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8081 tcp:8081
+npm run android -- --host localhost
 ```
 
-或：
+该命令会启动 Metro，并尝试在模拟器的 Expo Go 中打开项目。
+
+模拟器 Cold Boot 后，如果后端和 Metro 终端仍在运行，只需重新建立
+ADB 映射并打开 Expo 项目：
 
 ```powershell
-npx expo start
+adb wait-for-device
+adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8081 tcp:8081
+adb shell am start -a android.intent.action.VIEW -d "exp://127.0.0.1:8081" host.exp.exponent
 ```
 
-然后在 Expo 终端按：
+也可以在完成 `adb reverse` 后，回到 Metro 终端按：
 
 ```text
 a
 ```
+
+`adb reverse` 只建立模拟器到电脑端口的反向映射，不会自行启动
+Expo Go 或打开项目。每次 Cold Boot 后都应重新执行映射。
 
 ### 10.2 Android 真机
 
@@ -593,7 +608,10 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent\mobile
-npm run android
+adb wait-for-device
+adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8081 tcp:8081
+npm run android -- --host localhost
 ```
 
 ---

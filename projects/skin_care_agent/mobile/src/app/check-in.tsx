@@ -1,5 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Device from 'expo-device';
 import { File } from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -27,6 +29,10 @@ import {
   uploadCheckInPhoto,
 } from '@/lib/check-in-api';
 import type { CheckIn } from '@/lib/check-in-api';
+import {
+  shouldUseSystemCamera,
+  takeCheckInPhoto,
+} from '@/lib/camera-capture';
 import {
   capturedCheckInViews,
   CHECK_IN_VIEWS,
@@ -78,6 +84,10 @@ export default function CheckInScreen() {
     ? CHECK_IN_VIEWS.findIndex((view) => view.type === currentView.type) + 1
     : CHECK_IN_VIEWS.length;
   const busy = operation !== 'idle';
+  const useSystemCamera = shouldUseSystemCamera({
+    isDevelopment: __DEV__,
+    isDevice: Device.isDevice,
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -202,8 +212,7 @@ export default function CheckInScreen() {
 
   async function takePhoto() {
     if (
-      !cameraRef.current ||
-      !cameraReady ||
+      (!useSystemCamera && (!cameraRef.current || !cameraReady)) ||
       !checkIn ||
       !currentView ||
       busy
@@ -214,12 +223,20 @@ export default function CheckInScreen() {
     setError(null);
     setQualityMessages([]);
     try {
-      const picture = await cameraRef.current.takePictureAsync({
-        quality: 0.9,
-        skipProcessing: false,
+      const picture = await takeCheckInPhoto({
+        camera: cameraRef.current,
+        launchSystemCamera: () =>
+          ImagePicker.launchCameraAsync({
+            allowsEditing: false,
+            cameraType: ImagePicker.CameraType.front,
+            mediaTypes: ['images'],
+            quality: 1,
+          }),
+        useSystemCamera,
       });
-      if (!picture?.uri) {
-        throw new Error('Camera did not return a photo');
+      if (!picture) {
+        setOperation('idle');
+        return;
       }
       const capture: PendingCapture = {
         uri: picture.uri,

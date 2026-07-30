@@ -14,6 +14,7 @@ __pycache__/
 # 本地存储（用户图片等）
 backend/storage_local/
 storage_local/
+backend/storage_debug/
 
 # IDE
 .idea/

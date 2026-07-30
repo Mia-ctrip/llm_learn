@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -21,9 +22,9 @@ def _jpeg_bytes() -> bytes:
     return output.getvalue()
 
 
-def _upload_file() -> UploadFile:
+def _upload_file(data: bytes | None = None) -> UploadFile:
     return UploadFile(
-        io.BytesIO(_jpeg_bytes()),
+        io.BytesIO(data if data is not None else _jpeg_bytes()),
         filename="face.jpg",
         headers=Headers({"content-type": "image/jpeg"}),
     )
@@ -103,20 +104,86 @@ class _FakeStorage:
 
 
 @pytest.mark.asyncio
-async def test_check_in_upload_rejects_failed_quality(monkeypatch) -> None:
+async def test_check_in_upload_rejects_failed_quality(monkeypatch, caplog) -> None:
     failed = PhotoQualityResult(
         status="failed",
         view_type="front",
-        errors=("face_cut_off",),
+        errors=("image_blurry", "face_not_detected"),
         warnings=(),
-        metrics={"face_count": 1},
+        metrics={
+            "width": 1080,
+            "height": 1920,
+            "laplacian_variance": 42.5,
+            "mean_luma": 73.2,
+            "face_count": 0,
+        },
     )
     monkeypatch.setattr(photos, "_validate_check_in_target", lambda *args, **kwargs: None)
     monkeypatch.setattr(photos, "assess_photo_quality", lambda *args, **kwargs: failed)
 
+    with caplog.at_level(logging.INFO, logger=photos.__name__):
+        with pytest.raises(HTTPException) as exc_info:
+            await photos.upload_photo(
+                file=_upload_file(),
+                taken_at=None,
+                check_in_id=1,
+                view_type="front",
+                client_request_id=None,
+                current_user=SimpleNamespace(id=1),
+                db=object(),
+            )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["errors"] == ["image_blurry", "face_not_detected"]
+    assert "照片较模糊" in exc_info.value.detail["quality_meta"]["error_messages"][0]
+    assert "photo_quality_failed" in caplog.text
+    assert "check_in_id=1" in caplog.text
+    assert "view_type=front" in caplog.text
+    assert "image_blurry" in caplog.text
+    assert "face_not_detected" in caplog.text
+    assert "laplacian_variance" in caplog.text
+    assert "42.5" in caplog.text
+    assert "face_count" in caplog.text
+    assert any(
+        record.levelno == logging.WARNING
+        and "photo_quality_failed" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("app_env", "expect_saved"),
+    [("dev", True), ("prod", False)],
+)
+async def test_failed_quality_debug_photo_is_saved_only_in_dev(
+    monkeypatch,
+    tmp_path,
+    app_env,
+    expect_saved,
+) -> None:
+    raw = _jpeg_bytes()
+    failed = PhotoQualityResult(
+        status="failed",
+        view_type="front",
+        errors=("face_not_detected",),
+        warnings=(),
+        metrics={"face_count": 0},
+    )
+    settings = SimpleNamespace(
+        allowed_mime_set={"image/jpeg"},
+        upload_max_bytes=8 * 1024 * 1024,
+        app_env=app_env,
+        photo_quality_save_rejected_in_dev=True,
+    )
+    monkeypatch.setattr(photos, "_validate_check_in_target", lambda *args, **kwargs: None)
+    monkeypatch.setattr(photos, "assess_photo_quality", lambda *args, **kwargs: failed)
+    monkeypatch.setattr(photos, "get_settings", lambda: settings)
+    monkeypatch.setattr(photos, "REJECTED_QUALITY_DIR", tmp_path, raising=False)
+
     with pytest.raises(HTTPException) as exc_info:
         await photos.upload_photo(
-            file=_upload_file(),
+            file=_upload_file(raw),
             taken_at=None,
             check_in_id=1,
             view_type="front",
@@ -125,9 +192,11 @@ async def test_check_in_upload_rejects_failed_quality(monkeypatch) -> None:
             db=object(),
         )
 
+    saved = list(tmp_path.glob("*.jpg"))
     assert exc_info.value.status_code == 422
-    assert exc_info.value.detail["errors"] == ["face_cut_off"]
-    assert "额头、两颊和下巴" in exc_info.value.detail["quality_meta"]["error_messages"][0]
+    assert bool(saved) is expect_saved
+    if saved:
+        assert saved[0].read_bytes() == raw
 
 
 @pytest.mark.asyncio

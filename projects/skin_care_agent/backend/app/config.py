@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     # upload constraints
     upload_max_bytes: int = 8 * 1024 * 1024  # 8MB
     upload_allowed_mimes: str = "image/jpeg,image/png,image/webp"
+    photo_quality_save_rejected_in_dev: bool = False
 
     # ai rate limit
     ai_analyze_daily_limit: int = 10

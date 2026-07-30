@@ -1958,3 +1958,283 @@ GROUP BY region, status;
 - 用户连接一台启用 USB 调试的 Android 真机，并确认 `adb devices -l` 显示该设备为 `device`。
 - 真机联调时将忽略提交的 `mobile/.env` 临时改为 `EXPO_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1`，执行 `adb reverse tcp:8000 tcp:8000` 和 `adb reverse tcp:8081 tcp:8081`，重启 Metro 后打开 Expo Go。
 - 使用真实前置相机依次完成正面、左侧、右侧照片，验证质量反馈后的重拍、自动完成、完成页和重新进入后的已完成恢复；通过后分别追加 #9b-2 与 #9b-3 完成记录。
+
+---
+
+## 2026-07-28 — Step #9b-3 补充：模拟器接入电脑摄像头 — 🚧 进行中
+
+### 本次完成
+
+- 将 Pixel 8 AVD 的前置摄像头映射为主机 `HP FHD Camera`（`webcam0`），替换原有的模拟场景输入。
+- 修复 Expo Router 启动时无法解析 `@expo/metro-runtime` 的打包错误；通过 Expo 兼容版本安装将 `@expo/metro-runtime` 声明为移动端直接依赖。
+- 重新连通 Uvicorn、Metro、Expo Go 与 Pixel 8 模拟器，进入当天 Check-in 相机页面。
+
+### 验证情况
+
+- AVD 配置为 `hw.camera.front=webcam0`，`emulator -webcam-list` 能识别 `HP FHD Camera`。
+- `@expo/metro-runtime` 可从移动端项目根目录解析；Expo Go 成功加载项目，不再出现 Metro 模块解析错误。
+- 后端 `/health` 返回 200，Metro 状态正常，`adb reverse` 的 8000、8081 映射存在。
+- Android 相机服务显示 Expo Go 为活动客户端，摄像头设备状态为 `ACTIVE`；Check-in 页面已显示电脑摄像头实时画面。
+- 移动端 `npm run typecheck`、`npm run lint` 和 `npm run test:unit` 均通过，单元测试为 21 passed。
+
+### 当前阻塞或遗留
+
+- 尚未使用电脑摄像头依次拍摄并上传正面、左侧和右侧三张合规照片，因此自动推进、自动完成、完成页及重新进入恢复仍待验证。
+- `npx expo install --check` 提示 `react-native-screens@4.25.2` 与 Expo 57 建议的 `~4.26.0` 不一致；当前启动与相机预览未受影响，尚未获准升级该依赖。
+
+### 下一步
+
+- 在当前 Check-in 页面使用电脑摄像头依次完成正面、左侧和右侧拍摄，验证质量反馈、上传、自动完成和完成状态恢复。
+- 正向闭环通过后分别追加 Step #9b-2 与 Step #9b-3 的完成记录；最终仍保留真实 Android 设备差异验证。
+
+---
+
+## 2026-07-28 — Step #9b-3 补充：照片质量失败诊断日志 — ✅ 已完成
+
+### 本次完成
+
+- 在 `POST /photos` 的质量拒绝分支新增 INFO 级诊断日志，输出 `check_in_id`、`view_type`、错误码和 `quality_result.metrics`。
+- 日志只包含数值质量指标，不记录照片内容、认证 Token 或用户身份信息。
+- 扩展 `backend/tests/test_photos.py`，覆盖质量失败日志中的视角、错误码、清晰度方差和人脸数量。
+
+### 验证情况
+
+- 先运行定向测试并确认其因缺少 `photo_quality_failed` 日志而失败；实现后同一定向测试通过。
+- 后端 `uv run ruff check --no-cache .` 通过。
+- 后端完整 `uv run pytest -q` 回归为 42 passed，保留 1 条既有 Starlette/httpx2 弃用警告。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 在模拟器中重新拍摄一张照片，从 Uvicorn 终端读取 `photo_quality_failed` 的 `errors` 和 `metrics`，据此判断主要限制来自清晰度、光照、人脸占比还是模型未检出。
+
+---
+
+## 2026-07-28 — 照片质量失败诊断日志级别修正 — ✅ 已完成
+
+### 本次完成
+
+- 修正上一条“照片质量失败诊断日志”记录：最终日志级别由 INFO 调整为 WARNING，避免 Uvicorn 已初始化日志系统时业务模块 INFO 被过滤。
+- 测试新增日志级别断言，确保 `photo_quality_failed` 以 WARNING 输出。
+
+### 验证情况
+
+- 先确认新增级别断言在 INFO 实现下按预期失败；改为 WARNING 后定向测试通过。
+- 后端 Ruff 全量检查通过；完整 pytest 回归为 42 passed，保留 1 条既有 Starlette/httpx2 弃用警告。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 在模拟器中重新拍摄并把 Uvicorn 终端中的 `photo_quality_failed` 完整一行提供给后续诊断。
+
+---
+
+## 2026-07-28 — Step #9b-3 补充：电脑摄像头黑帧诊断 — ⏸ 阻塞
+
+### 本次完成
+
+- 通过新增的 `photo_quality_failed` 日志取得模拟器实际上传照片的完整质量指标。
+- 核对 Windows 摄像头设备、隐私权限、AVD 映射和当前摄像头占用进程。
+
+### 验证情况
+
+- 上传图片尺寸为 1080×2400，`laplacian_variance=115.48` 高于清晰度阈值 100，不属于模糊拒绝。
+- 图片 `mean_luma=0.18`、`p95_luma=0`、`dark_fraction=0.9987`，证明模拟器上传的画面有 99.87% 为黑色；MediaPipe 因此得到 `face_count=0`。
+- Windows 显示 `HP FHD Camera` 设备状态正常，用户级与系统级 webcam 权限均为 Allow，Pixel 8 AVD 前置摄像头为 `webcam0`。
+- Windows 摄像头使用记录中只有 Android Emulator 的 `qemu-system-x86_64.exe` 处于活动状态，未发现其他应用争抢摄像头。
+
+### 当前阻塞或遗留
+
+- 主机摄像头向模拟器输出黑帧，可能来自 HP 摄像头物理隐私遮挡，或模拟器摄像头流初始化异常。
+- 在恢复正常主机摄像头画面前，无法使用该模拟器验证三视角正向闭环。
+
+### 下一步
+
+- 用户检查 HP 电脑的摄像头物理隐私挡板或键盘摄像头隐私键。
+- 让模拟器释放摄像头后使用 Windows“相机”应用验证主机画面；若主机画面正常，则关闭相机应用并对 Pixel 8 AVD 执行 Cold Boot 后重试。
+
+---
+
+## 2026-07-28 — Step #9b-3 补充：质量失败原图本地保存 — ✅ 已完成
+
+### 本次完成
+
+- 新增 `PHOTO_QUALITY_SAVE_REJECTED_IN_DEV` 配置，默认关闭，并且只有 `APP_ENV=dev` 时允许保存质量失败原图。
+- 在质量检查返回 422 前，将后端实际收到的原始字节写入 `backend/storage_debug/rejected/`，并在 `photo_quality_failed` 日志中输出 `rejected_path`。
+- 保存失败只记录异常，不改变原有质量响应；生产环境即使误设开关也不会保存。
+- 将 `backend/storage_debug/` 加入 Git 忽略；当前本地 `.env` 已临时启用该诊断开关。
+
+### 验证情况
+
+- 先新增开发环境保存测试并确认其按预期失败；实现后开发环境保存与生产环境禁止保存两组测试均通过。
+- 后端 Ruff 全量检查通过；完整 pytest 回归为 44 passed，保留 1 条既有 Starlette/httpx2 弃用警告。
+- 独立配置检查返回 `app_env=dev save_rejected=True`，运行中后端健康检查返回正常。
+
+### 当前阻塞或遗留
+
+- 尚未在功能启用后重新上传照片，因此调试目录要到下一次质量失败时才会生成文件。
+- 调试文件包含真实人脸图像，仅用于本地问题定位，排查完成后应关闭开关并删除目录。
+
+### 下一步
+
+- 用户在模拟器中重新拍摄一次；根据 Uvicorn 日志中的 `rejected_path` 打开原始图片，确认黑帧发生在上传前还是后端处理阶段。
+
+---
+
+## 2026-07-28 — Step #9b-3 补充：黑帧产生环节定位 — ⏸ 阻塞
+
+### 本次完成
+
+- 打开 `backend/storage_debug/rejected/` 中保存的失败原图，确认后端收到的请求文件本身为全黑图片。
+- 对照主机 Windows“相机”应用和 Android 模拟器内的 Expo Camera 预览，二者均能显示主机摄像头实时画面。
+- 将问题范围从后端解码、网络传输和人脸模型缩小到 Android 模拟器静态照片输出流或 Expo Camera 拍后处理。
+
+### 验证情况
+
+- 调试保存发生在后端质量拒绝之前，写入内容为请求中的原始 `data` 字节，未经过归一化或重新编码。
+- 失败文件尺寸为 1080×2400，与模拟器竖屏预览尺寸一致；当前 `takePictureAsync` 使用 `skipProcessing=false`，Expo 会执行旋转并缩放到预览尺寸。
+- Windows 摄像头能正常拍照，模拟器实时预览正常，但 Expo 返回的 JPEG 全黑，说明预览流正常不代表独立的 JPEG 静态捕获流正常。
+
+### 当前阻塞或遗留
+
+- 尚未区分 Android Emulator 的 JPEG 静态捕获流异常，还是 Expo Camera 的旋转/缩放处理异常。
+
+### 下一步
+
+- 先使用模拟器内置 Android“相机”应用切换到前置摄像头并拍照，检查系统相机保存的照片是否全黑。
+- 若系统相机照片正常，则将 Expo `takePictureAsync` 临时改为 `skipProcessing=true`；仍异常时再查询 `getAvailablePictureSizesAsync()` 并固定受支持的 4:3 或 16:9 图片尺寸。
+
+---
+
+## 2026-07-29 — Android 模拟器前端启动指令补充 — ✅ 已完成
+
+### 本次完成
+
+- 更新 `docs/environment_setup.md` 的 Android 模拟器启动章节，补充后端、模拟器和 Metro 的启动前提。
+- 分别记录 Metro 尚未运行时的一次性启动命令，以及 Cold Boot 后复用现有 Metro 时的恢复命令。
+- 明确 `adb reverse` 只建立端口映射，不会启动 Expo Go；补充 Metro 终端按 `a` 和通过 Expo URL Intent 打开项目的两种方式。
+- 同步更新“本地完整启动顺序”中的客户端命令。
+
+### 验证情况
+
+- 文档命令与当前 Pixel 8 API 36 模拟器实际联调流程核对一致。
+- 实际执行 `adb reverse` 和 Expo URL Intent 后，Expo Go 的项目 Activity 成功进入前台。
+
+### 当前阻塞或遗留
+
+- 无。
+
+### 下一步
+
+- 后续模拟器 Cold Boot 后按文档重新建立 8000、8081 映射并打开 Expo 项目。
+
+---
+
+## 2026-07-29 — Android 模拟器前置摄像头映射修正 — ✅ 已完成
+
+### 本次完成
+
+- 确认 Pixel 8 AVD 的 `hw.camera.front=none` 是 Expo Camera 无法启动的直接原因。
+- 将前置摄像头改为 `webcam0`，后置摄像头改为 `emulated`，并对模拟器执行无快照冷启动。
+- 重新建立 8000、8081 端口映射并打开 Expo 项目。
+
+### 验证情况
+
+- Android `media.camera` 已枚举前后摄像头，Expo Go 正在使用前置 Camera ID 10。
+- 模拟器屏幕截图确认前置摄像头已输出 `HP FHD Camera` 的真实画面，不再显示“相机预览启动失败”。
+
+### 当前阻塞或遗留
+
+- 尚未重新验证 Expo 静态拍照结果是否仍为全黑，以及后端照片质量校验是否能够通过。
+
+### 下一步
+
+- 在当前前置摄像头画面中完整框入正脸并重新拍照，检查保存的拒绝原图和后端质量日志。
+
+---
+
+## 2026-07-29 — Step #9b-3 补充：Expo 模拟器静态照片黑帧根因对照 — ⏸ 阻塞
+
+### 本次完成
+
+- 在相同 Pixel 8 AVD、相同 `Webcam0` 前置摄像头下，对比 Android 系统相机与 Expo Camera 的静态拍照结果。
+- Android 系统相机保存的 JPEG 能正常显示真实人像，确认主机摄像头、AVD 映射和 Android 静态拍照能力正常。
+- Expo Camera 保存并上传的 JPEG 仍为黑帧，仅包含模拟器时间戳；后端保存的请求原图与该结果一致。
+- 实验 `skipProcessing=true` 并在 Expo Go 中手动 Reload 后复测，黑帧仍可稳定复现；该无效实验已回退。
+
+### 验证情况
+
+- Android 系统相机测试照片为 130937 字节，肉眼检查可见正常人像。
+- Expo 重载后的失败照片仍为 1080×2400 黑帧，肉眼检查只见黄色时间戳。
+- 回退实验后执行前端 `npm run typecheck`、`npm run lint` 和 `npm run test:unit`，全部通过，单元测试为 21 passed。
+
+### 当前阻塞或遗留
+
+- Android Emulator 外接 Webcam 的 JPEG 静态输出路径与当前 Expo CameraX 路径不兼容；实时预览正常，但无法用该路径获得可用于质量检测的人像照片。
+- 需要真机验证 Expo Camera 正常拍照，或在开发环境增加 Android 系统相机/相册选择作为模拟器联调入口。
+
+### 下一步
+
+- 经用户允许后安装 `expo-image-picker`，增加仅用于开发联调的系统相机/相册照片入口，继续验证上传、三视角和 Check-in 完成流程。
+
+---
+
+## 2026-07-29 — Step #9b-3 补充：模拟器系统相机联调入口 — ✅ 已完成
+
+### 本次完成
+
+- 安装 Expo SDK 57 兼容的 `expo-image-picker ~57.0.6`。
+- 新增 `mobile/src/lib/camera-capture.ts`，将拍照来源分流封装为独立逻辑。
+- 开发环境的模拟器使用 Android 系统相机并请求前置镜头；真机和非开发环境继续使用现有 Expo Camera 内嵌拍照。
+- 系统相机取消拍摄时不生成待上传记录；成功返回后继续复用现有 `view_type`、`taken_at`、`client_request_id` 和照片上传流程。
+- 新增 `mobile/tests/camera-capture.test.mjs`，覆盖模拟器分流、真机分流、取消拍摄和环境判定。
+
+### 验证情况
+
+- 新测试先因分流模块不存在而失败，完成实现后 4 项定向测试通过。
+- 前端 `npm run typecheck`、`npm run lint` 和 `npm run test:unit` 全部通过，单元测试为 25 passed。
+- Pixel 8 模拟器从 Check-in 成功打开 Android `CaptureActivity`，系统相机以前置 `Webcam0` 拍照并返回 Expo Go。
+- 后端收到的拒绝原图为 160839 字节的正常人像 JPEG，不再是黑帧；质量检查返回清晰度、距离和视角提示，确认原有模型校验链路已处理真实图像。
+
+### 当前阻塞或遗留
+
+- 尚未用符合引导要求的正面、左侧和右侧照片走完一次完整 Check-in。
+- `npx expo install --check` 仍报告既有的 `react-native-screens 4.25.2` 与 Expo 推荐的 `~4.26.0` 不一致，本子步骤未做无关依赖升级。
+- npm 审计报告 11 个 moderate、9 个 high 风险项，未执行自动修复。
+
+### 下一步
+
+- 在模拟器系统相机中按当前视角要求靠近镜头并稳定拍摄，依次验证正面、左侧、右侧上传和 Check-in 自动完成。
+- 完成模拟器闭环后，再在 Android 真机验证原有 Expo Camera 拍照路径。
+
+---
+
+## 2026-07-29 — Step #9b-4 三视角 Check-in 验收启动 — ⏸ 阻塞
+
+### 本次完成
+
+- 核对 Pixel 8 模拟器、Uvicorn、Metro 和 Expo Go 联调环境，确认 App 已进入当天 Check-in 的正面拍摄步骤。
+- 确认 8000、8081 的 `adb reverse` 映射存在，后端健康检查和 Metro 状态正常。
+- 本步骤只验收既有三视角链路；质量失败时仅修正错误提示或拍摄交互，不放宽后端质量阈值。
+
+### 验证情况
+
+- `adb devices -l` 显示 `emulator-5554` 状态为 `device`。
+- `GET /health` 返回 `status=ok`，Metro 返回 `packager-status:running`。
+- App 当前显示 `1 / 3 · 正面`，上次质量提示为“面部距离镜头太远，请靠近后重新拍摄”。
+- 三张照片保存、第三张后的自动完成和 App 重启恢复尚未验证。
+
+### 当前阻塞或遗留
+
+- 等待用户在电脑摄像头前配合完成正面、左侧和右侧三次实际拍摄。
+
+### 下一步
+
+- 用户先在模拟器当前页面点击正面快门，在系统相机中让完整正脸靠近镜头、保持稳定并确认照片。
+- 拍摄返回后读取页面反馈和后端质量指标；通过后继续左侧、右侧，并验证自动完成与重启恢复。

@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo/metro-runtime": "~57.0.7",
     "@expo/ui": "~57.0.6",
     "expo": "~57.0.6",
     "expo-camera": "~57.0.3",
@@ -12,6 +13,7 @@
     "expo-font": "~57.0.1",
     "expo-glass-effect": "~57.0.1",
     "expo-image": "~57.0.1",
+    "expo-image-picker": "~57.0.6",
     "expo-linking": "~57.0.3",
     "expo-router": "~57.0.6",
     "expo-secure-store": "~57.0.1",
