@@ -1,0 +1,21 @@
+projects/skin_care_agent/backend/app/services/vision/tracker.py
+  s_0162dcf78df1bc::t_fbd017df3474b4 162-164
+projects/skin_care_agent/backend/app/models/__init__.py
+  s_0162dcf78df1bc::t_fbd017df3474b4 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.34-trip",
+  "base_commit_sha": "9102bf4d616467054d33b7bdca210e7ac5ed84e1",
+  "prompts": {},
+  "sessions": {
+    "s_0162dcf78df1bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f04fdb7-847b-4a25-9a9d-1cbe02599fa6",
+        "model": "qwen3.7-plus"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}

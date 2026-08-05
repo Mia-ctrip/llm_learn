@@ -1,0 +1,57 @@
+projects/skin_care_agent/backend/app/services/storage_service/local.py
+  s_0162dcf78df1bc::t_4147eb6a7c9dd0 1-45
+projects/skin_care_agent/backend/app/api/files.py
+  s_0162dcf78df1bc::t_f1d4ec3565dfe1 1-30
+projects/skin_care_agent/backend/app/services/storage_service/__init__.py
+  s_0162dcf78df1bc::t_37a93f1f9e36c8 1-20
+projects/skin_care_agent/backend/app/services/__init__.py
+  s_0162dcf78df1bc::t_96ad1e19e75461 1
+projects/skin_care_agent/backend/app/services/storage_service/signing.py
+  s_0162dcf78df1bc::t_9bef385489ecfe 1-33
+projects/skin_care_agent/backend/app/schemas/photo.py
+  s_0162dcf78df1bc::t_398f03bdde0a2e 1-30
+projects/skin_care_agent/backend/app/api/photos.py
+  s_0162dcf78df1bc::t_92841503ac368b 1-125
+projects/skin_care_agent/backend/app/main.py
+  s_0162dcf78df1bc::t_3f53697b18e0df 9
+  s_0162dcf78df1bc::t_248db471bf3e4c 45-46
+projects/skin_care_agent/backend/app/config.py
+  s_0162dcf78df1bc::t_bfee39f331a831 80-83
+  s_0162dcf78df1bc::t_7632eeeb031751 34-39
+projects/skin_care_agent/backend/app/models/photo.py
+  s_0162dcf78df1bc::t_24c18f0315bf54 1-25
+projects/skin_care_agent/backend/app/db/migrations/versions/0001_init.py
+  s_0162dcf78df1bc::t_c30578a43a5a43 1-68
+projects/skin_care_agent/backend/README.md
+  s_0162dcf78df1bc::t_e60cdfe5a54290 5,9,11-16,20,22,24,33,42,48,54-59,73-77,81-92,94,98-135,137-145
+projects/skin_care_agent/backend/app/services/storage_service/factory.py
+  s_0162dcf78df1bc::t_abf518443ee14b 1-15
+projects/skin_care_agent/backend/app/models/__init__.py
+  s_0162dcf78df1bc::t_6d4b9575ea378e 8-9,11
+projects/skin_care_agent/backend/app/schemas/__init__.py
+  s_0162dcf78df1bc::t_b5e4a2a2d4c2d3 1
+projects/skin_care_agent/backend/dev_notes.md
+  s_0162dcf78df1bc::t_02fbf196abda92 1-146
+projects/skin_care_agent/backend/app/services/storage_service/base.py
+  s_0162dcf78df1bc::t_1faca10d87e3e5 1-35
+projects/skin_care_agent/backend/.env.example
+  s_0162dcf78df1bc::t_3bd9fe4f10761d 15-20
+projects/skin_care_agent/backend/app/models/user.py
+  s_0162dcf78df1bc::t_2f7e4572a01824 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.24-trip",
+  "base_commit_sha": "510f0c85171d54eb0d00ccfdbb196fd126514cba",
+  "prompts": {},
+  "sessions": {
+    "s_0162dcf78df1bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f04fdb7-847b-4a25-9a9d-1cbe02599fa6",
+        "model": "arn:aws:bedrock:us-west-2:133197901387:application-inference-profile/ypvzpmevzxdl"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}

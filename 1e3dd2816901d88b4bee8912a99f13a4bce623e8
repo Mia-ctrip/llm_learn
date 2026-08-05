@@ -1,0 +1,44 @@
+projects/skin_care_agent/backend/dev_notes.md
+  s_0162dcf78df1bc::t_eb39f4de797289 809-923
+projects/skin_care_agent/backend/app/api/trends.py
+  s_0162dcf78df1bc::t_0bee67da3d3088 1-5,7-100,103-104,106-109,112-113,115-129,133,135-207
+projects/skin_care_agent/backend/app/main.py
+  s_0162dcf78df1bc::t_aac185e6c3561b 9
+  s_0162dcf78df1bc::t_dca5a72a07b8f6 49-50
+projects/skin_care_agent/backend/app/services/analysis_service.py
+  s_0162dcf78df1bc::t_4275d62c665c48 329-345
+projects/skin_care_agent/backend/app/db/migrations/versions/0008_lineages.py
+  s_0162dcf78df1bc::t_ce059e105ba3b6 1-140
+projects/skin_care_agent/backend/app/models/patch_lineage.py
+  s_0162dcf78df1bc::t_91c783d198209c 6
+  s_0162dcf78df1bc::t_134e9c02565c2f 1-5,7-58,60-71
+  s_0162dcf78df1bc::t_ec1e8ac101f10a 59
+projects/skin_care_agent/backend/app/schemas/lineage.py
+  s_0162dcf78df1bc::t_01a78cac81f25b 1-38
+projects/skin_care_agent/backend/app/services/vision/tracker.py
+  s_0162dcf78df1bc::t_736cccbbb50c6d 1-104,106-247
+projects/skin_care_agent/backend/app/schemas/trend.py
+  s_0162dcf78df1bc::t_5e9934029fa2f0 1-34
+projects/skin_care_agent/backend/app/models/__init__.py
+  s_0162dcf78df1bc::t_9fb42061815639 14,24-25
+projects/skin_care_agent/docs/cv-acne-detection-research.md
+  s_0162dcf78df1bc::t_2dc0ccc9cfb1d8 1-93
+projects/skin_care_agent/backend/app/api/lineages.py
+  s_0162dcf78df1bc::t_60e312f2a84e66 1-38,41-86,88-102,112-113,115-120,123-133,141-187,197-198,200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.33-trip",
+  "base_commit_sha": "1e3dd2816901d88b4bee8912a99f13a4bce623e8",
+  "prompts": {},
+  "sessions": {
+    "s_0162dcf78df1bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f04fdb7-847b-4a25-9a9d-1cbe02599fa6",
+        "model": "qwen3.7-plus"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
