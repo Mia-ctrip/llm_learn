@@ -1,0 +1,24 @@
+projects/skin_care_agent/design/product/app_product_co_creation_log.md
+  s_662113e0881d3a::t_1f4b62d5d280ee 1-20,22-30,32-101,103-176,178-297,299-640,642-761
+  s_662113e0881d3a::t_268aac31365d8f 21,31,102
+  s_662113e0881d3a::t_ca2c0a9f5974f2 177,298,641
+projects/skin_care_agent/backend/dev_notes.md
+  s_662113e0881d3a::t_ce93784075ca3b 2536-2563
+  s_662113e0881d3a::t_426230be57ed87 2564-2593
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.39-trip",
+  "base_commit_sha": "e9a2a2564c6c9499cbe2608aa237c44d6c58aed4",
+  "prompts": {},
+  "sessions": {
+    "s_662113e0881d3a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd11d-cc23-7881-8f1d-63d83d253d88",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
