@@ -1,0 +1,100 @@
+projects/skin_care_agent/backend/dev_notes.md
+  s_cfdbb254b536db::t_f4d2b71d65de63 2880-2908
+  s_2816e83132919f::t_fc350bf6df3b8b 2768-2794
+  s_2816e83132919f::t_1b0c9a3f0fa27c 2795-2819
+  s_07f4d864d3fe09::t_b647572c204895 2909-2938
+  s_07f4d864d3fe09::t_231be1b0adf1ca 2939-2965
+  s_66c151a1024b06::t_e7892171e2835d 2594-2623
+  s_2816e83132919f::t_c3fd9843a6b648 2652-2679
+  s_2816e83132919f::t_9071a8e7c4f85b 2680-2708
+  s_2816e83132919f::t_ca28d6ffbd690c 2709-2737
+  s_07f4d864d3fe09::t_6ae8cf57534479 2624-2651
+  s_2816e83132919f::t_341a0d95ea7c5e 2738-2767
+  s_2816e83132919f::t_72956195e96ade 2820-2850
+  s_cfdbb254b536db::t_317b1185da8c47 2851-2879
+projects/skin_care_agent/design/product/user_flows/02_product_followup_flow.svg
+  s_ff6e19420edef6::t_7f17e84e305451 1-105
+projects/skin_care_agent/design/product/user_flows/01_record_change_flow.svg
+  s_66c151a1024b06::t_0aaf6502c2fbb0 1-112
+projects/skin_care_agent/design/product/skin_care_app_product_spec.md
+  s_2816e83132919f::t_297d263e76fcf7 55,111,150,832,941
+  s_2816e83132919f::t_8a8a041f963b41 214-220,245-251,254,258-260,692,694,739,901,947-948
+  s_2816e83132919f::t_20983355bc967a 165-168,171,189,255,427,837-838,840-842,844-847,877,880-882,951-952,960-961
+  s_2816e83132919f::t_5052441d6a57ab 379,717,719-720,725-727,731,748,784
+  s_2816e83132919f::t_40e47d26eaa3f1 1-54,56,58-62,71-72,74,83-86,88-110,112-120,122,126-132,136-139,141-149,151-164,169-170,172-180,185-186,190-213,221-244,252-253,256-257,261-262,264-277,280-340,349-350,352-357,359-378,380-383,386-389,392,413-425,428-434,439,441-442,445-463,470-508,510-515,519-521,525-533,537-578,583-584,586-606,608-615,617-642,644-659,667-676,678-679,687-691,695-698,700-701,703-716,718,721-724,728-730,732-738,740-747,749,757-766,770-783,785,787-831,848-875,878-879,883-900,902-914,918-940,942-946,949-950,953-959,963,965-976,978-1020
+  s_2816e83132919f::t_483e26ccc87119 133-135,140,181-184,187-188,263,278-279,341-348,351,384-385,435-438,440,464-467,516-517,536,616,693,699,833-836
+  s_2816e83132919f::t_b9f693cacf5d79 57,63-70,81,87,123-125,393-412,444,524,535,580-581,585,643,660-666,677,680-686,702,754-756,768,843,876,917,964
+  s_2816e83132919f::t_0ea7ba9e9cf488 73,75-80,82,121,358,390-391,426,443,468-469,509,518,522-523,534,579,582,607,750-753,767,769,786,915-916,962,977
+  s_2816e83132919f::t_fa6ccc0fc8c0aa 839
+projects/skin_care_agent/design/product/user_flows/00_global_user_flow.svg
+  s_66c151a1024b06::t_c38935c25ebda1 1-135
+projects/skin_care_agent/docs/superpowers/plans/2026-08-12-backend-product-redesign.md
+  s_07f4d864d3fe09::t_709f39ddbe894f 878-933,935-938,940-949,951-957,959,961-1062
+  s_07f4d864d3fe09::t_2dbba7204d4957 160-314,316-319,321,324-389
+  s_07f4d864d3fe09::t_f627c516df6734 1063-1250,1252-1267
+  s_07f4d864d3fe09::t_27191795b0f8f5 669-877
+  s_07f4d864d3fe09::t_020b9cb6767e3e 96,315,320,322-323,934,939,950,958,960,1251
+  s_f8c8d10e122384::t_f01381377b0bd4 390-668
+  s_07f4d864d3fe09::t_cc270a341746b7 1-95,97-159
+projects/skin_care_agent/docs/competitor_research.md
+  s_cfdbb254b536db::t_9be06fcd4ff8da 11,21,23,29,36
+  s_cfdbb254b536db::t_1d50796ba2796e 3,10,14,19-20,22,24-28,30-35,37-40,186,196-199
+projects/skin_care_agent/design/product/user_flows/03_history_memory_flow.svg
+  s_66c151a1024b06::t_31444a350cdeb2 1-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.40-trip",
+  "base_commit_sha": "f0804a2be8424e9ad96479241f8e63aada0f9be4",
+  "prompts": {},
+  "sessions": {
+    "s_07f4d864d3fe09": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdc4e-6daf-7f11-9b50-833fa2a08368",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    },
+    "s_2816e83132919f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdc7e-c998-7ff1-a039-495db9c84264",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    },
+    "s_66c151a1024b06": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdc70-776d-76c2-86f0-4d92c68aaddf",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    },
+    "s_cfdbb254b536db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe0af-7bb6-7db0-9277-800a87fb8a7a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    },
+    "s_f8c8d10e122384": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ff4d0-28cb-72c3-be3c-fe8ad0a1a3d6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    },
+    "s_ff6e19420edef6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdc79-6c22-7ef1-b6f4-26ddf31c90c5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
