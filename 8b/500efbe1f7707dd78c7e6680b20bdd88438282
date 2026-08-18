@@ -1,0 +1,19 @@
+projects/skin_care_agent/backend/dev_notes.md
+  s_07f4d864d3fe09::t_83814b758b78b6 2994-3018
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.40-trip",
+  "base_commit_sha": "8b500efbe1f7707dd78c7e6680b20bdd88438282",
+  "prompts": {},
+  "sessions": {
+    "s_07f4d864d3fe09": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdc4e-6daf-7f11-9b50-833fa2a08368",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
