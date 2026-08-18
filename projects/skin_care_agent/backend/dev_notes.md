@@ -2963,3 +2963,31 @@ GROUP BY region, status;
 
 - 用户确认后，仅暂存 `projects/skin_care_agent` 范围内经复核的变更，分批提交并再次运行质量门。
 - 将 `feat/mobile-check-in-flow` 快进合并到 `main`，合并后重跑测试，再让现有 `refactor/backend-product-redesign` 工作树同步最新 `main` 并开始 Task 1。
+
+---
+
+## 2026-08-18 — Skin Care 项目变更合并到 main — ✅ 已完成
+
+### 本次完成
+
+- 仅暂存并提交 `projects/skin_care_agent` 范围内的产品设计、用户流程图、竞品与环境说明、后端实施规划、启动说明和开发日志。
+- 提交 `f0804a2`（`docs(skin-care): sync product design and backend plan`），未包含仓库根目录的 GPU 笔记改动。
+- 将 `feat/mobile-check-in-flow` 通过 fast-forward 合并到本地 `main`；合并前已执行 `git pull --ff-only`，本地 `main` 当时与 `origin/main` 一致。
+
+### 验证情况
+
+- 合并后的后端全量测试通过：44 passed；保留 1 条 Starlette/httpx 第三方弃用警告。
+- 合并后的移动端单元测试通过：73 passed。
+- 合并后的 `npm run typecheck` 与 `npm run lint` 均通过。
+- 暂存区空白检查通过；GPU 目录的删除和新增文件仍保持未暂存、未修改状态。
+
+### 当前阻塞或遗留
+
+- 无本地合并阻塞。
+- 本地 `main` 尚未推送；远端更新需用户另行授权。
+- Starlette TestClient 的 httpx 弃用警告后续单独处理，不影响本次合并。
+
+### 下一步
+
+- 将现有 `refactor/backend-product-redesign` 工作树快进同步到最新本地 `main`。
+- 在该隔离工作树中按 `docs/superpowers/plans/2026-08-12-backend-product-redesign.md` 从 Task 1 开始实施。
