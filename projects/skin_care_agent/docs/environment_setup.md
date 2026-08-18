@@ -6,9 +6,9 @@
 
 ---
 
-## 1. 默认项目目录
+## 1. 项目目录
 
-本文默认项目路径：
+本文默认项目在：
 
 ```powershell
 D:\Mia\llm_learn\projects\skin_care_agent
@@ -26,6 +26,8 @@ skin_care_agent/
 ├── project_background.md # 当前项目背景与阶段
 └── backend/dev_notes.md  # 唯一开发进度日志
 ```
+
+如果你的新电脑路径不同，后续命令中的路径按实际位置替换。
 
 ---
 
@@ -103,13 +105,29 @@ winget install --id astral-sh.uv -e --source winget
 uv --version
 ```
 
-### 3.4 Node.js 22
+### 3.4 安装 Node.js 22.13.x
 
-安装 Node.js LTS：
+项目使用 Expo SDK 57。Expo SDK 57 对应的最低 Node.js 版本是 22.13.x，因此不要使用旧的 Node 18/20 环境。
 
-```powershell
-winget install --id OpenJS.NodeJS.LTS -e --source winget
+下载地址：
+
+```text
+https://nodejs.org/en/download
 ```
+
+如果官网当前 LTS 已高于 22，但你希望严格匹配本项目，可以到 Node 22 下载归档：
+
+```text
+https://nodejs.org/en/download/archive/
+```
+
+安装步骤：
+
+1. 下载 Windows Installer，通常选择 `Windows Installer (.msi)` + `x64`。
+2. 双击 `.msi` 安装包。
+3. 安装选项保持默认。
+4. 如果看到 `Automatically install the necessary tools`，本项目通常不需要勾选；Android 构建依赖后面用 Android Studio/JDK 单独装。
+5. 安装完成后重新打开 PowerShell。
 
 验证：
 
@@ -365,13 +383,13 @@ git clone <你的仓库地址> skin_care_agent
 cd skin_care_agent
 ```
 
-如果已经复制过来：
+如果已经复制过来，直接进入项目根目录：
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent
 ```
 
-检查：
+检查当前状态：
 
 ```powershell
 git status --short
@@ -379,9 +397,9 @@ git status --short
 
 ---
 
-## 7. 后端环境配置
+## 5. 后端环境配置
 
-### 7.1 创建 Python 虚拟环境
+### 5.1 创建 Python 虚拟环境
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent\backend
@@ -389,19 +407,30 @@ uv venv
 .venv\Scripts\activate
 ```
 
-### 7.2 安装后端依赖
+激活后，命令行前面通常会出现 `(.venv)`。
+
+### 5.2 安装后端依赖
 
 ```powershell
 uv pip install -e ".[dev]"
 ```
 
-### 7.3 创建后端 `.env`
+后端主要依赖来自 `backend/pyproject.toml`：
+
+- FastAPI / Uvicorn
+- SQLAlchemy / Alembic / psycopg
+- Pydantic / pydantic-settings
+- Pillow / OpenCV / MediaPipe / NumPy / SciPy
+- httpx / tenacity
+- pytest / ruff
+
+### 5.3 配置后端 `.env`
 
 ```powershell
 copy .env.example .env
 ```
 
-新电脑首次跑通时，至少确认：
+至少确认这些项：
 
 ```text
 APP_ENV=dev
@@ -420,9 +449,141 @@ AI_PROVIDER_PRIMARY=mock
 AI_PROVIDER_FALLBACKS=
 ```
 
-先用 `mock` 跑通本地环境；真实模型 key 后续再填。
+新电脑首次配置时，建议先保持：
 
-### 7.4 下载本地人脸关键点模型
+```text
+AI_PROVIDER_PRIMARY=mock
+```
+
+这样可以先跑通项目主链路，不依赖外部大模型 API key。
+
+如果要接真实模型，再填写对应 key，例如：
+
+```text
+MINIMAX_API_KEY=...
+QWEN_API_KEY=...
+GLM_API_KEY=...
+DOUBAO_API_KEY=...
+DEEPSEEK_API_KEY=...
+```
+
+不要把真实 `.env` 提交到 Git。
+
+---
+
+## 6. PostgreSQL 16 配置
+
+二选一：Docker 方式或本机安装方式。
+
+### 方案 A：Docker 启动 PostgreSQL
+
+```powershell
+docker run -d --name skin-pg `
+  -e POSTGRES_USER=skin `
+  -e POSTGRES_PASSWORD=skin `
+  -e POSTGRES_DB=skin_care `
+  -p 5432:5432 `
+  postgres:16
+```
+
+验证容器：
+
+```powershell
+docker ps
+```
+
+### 方案 B：本机 PostgreSQL
+
+下载地址：
+
+```text
+https://www.postgresql.org/download/windows/
+```
+
+安装步骤：
+
+1. 打开 PostgreSQL Windows installers 页面。
+2. 下载 PostgreSQL 16 的 Windows x86-64 installer。
+3. 双击安装包。
+4. 安装目录可以保持默认。
+5. Components 建议至少保留：
+   - PostgreSQL Server
+   - pgAdmin 4
+   - Command Line Tools
+6. 设置数据库超级用户 `postgres` 的密码。这个密码自己保存好。
+7. 端口保持默认：
+
+```text
+5432
+```
+
+8. Locale 可以保持默认。
+9. 安装结束后，如果弹出 Stack Builder，可以先取消；本项目暂时不需要额外插件。
+
+安装完成后，打开 `SQL Shell (psql)` 或 pgAdmin。
+
+如果使用 `SQL Shell (psql)`，一般按提示输入：
+
+```text
+Server [localhost]: 直接回车
+Database [postgres]: 直接回车
+Port [5432]: 直接回车
+Username [postgres]: 直接回车
+Password for user postgres: 输入安装时设置的 postgres 密码
+```
+
+进入 `psql` 后，执行：
+
+```sql
+CREATE USER skin WITH PASSWORD 'skin';
+CREATE DATABASE skin_care OWNER skin;
+```
+
+如果用户已经存在，可只确认数据库是否存在。不要重复创建导致报错后误以为数据库不可用。
+
+验证数据库是否能连接：
+
+```powershell
+psql -U skin -d skin_care -h localhost -p 5432
+```
+
+提示输入密码时输入：
+
+```text
+skin
+```
+
+如果 `psql` 命令不存在，需要把 PostgreSQL 的 `bin` 目录加入 PATH。常见路径：
+
+```text
+C:\Program Files\PostgreSQL\16\bin
+```
+
+### 6.1 应用数据库迁移
+
+```powershell
+cd D:\Mia\llm_learn\projects\skin_care_agent\backend
+.venv\Scripts\activate
+alembic upgrade head
+```
+
+当前预期 head：
+
+```text
+0012_app_foundation
+```
+
+查看当前迁移版本：
+
+```powershell
+.venv\Scripts\alembic.exe current
+```
+
+---
+
+## 7. 下载本地人脸关键点模型
+
+后端照片质量检查和几何标准化依赖本地模型文件：
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent\backend
@@ -435,25 +596,7 @@ powershell -ExecutionPolicy Bypass -File scripts\download_face_landmarker.ps1
 backend/model_assets/
 ```
 
-### 7.5 应用数据库迁移
-
-```powershell
-cd D:\Mia\llm_learn\projects\skin_care_agent\backend
-.venv\Scripts\activate
-alembic upgrade head
-```
-
-查看当前迁移版本：
-
-```powershell
-.venv\Scripts\alembic.exe current
-```
-
-当前预期 head：
-
-```text
-0012_app_foundation
-```
+该目录已被 Git 忽略。换新电脑后需要重新下载。
 
 ---
 
@@ -465,18 +608,13 @@ cd D:\Mia\llm_learn\projects\skin_care_agent\backend
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-验证：
+浏览器验证：
 
-```powershell
-Invoke-RestMethod http://localhost:8000/health
-Invoke-RestMethod http://localhost:8000/health/db
-```
-
-接口文档：
-
-```text
-http://localhost:8000/docs
-```
+| 检查项 | 地址 | 期望 |
+|---|---|---|
+| 进程健康 | `http://localhost:8000/health` | `status=ok` |
+| 数据库健康 | `http://localhost:8000/health/db` | `db=reachable` |
+| Swagger | `http://localhost:8000/docs` | 能打开接口文档 |
 
 ---
 
@@ -489,39 +627,41 @@ cd D:\Mia\llm_learn\projects\skin_care_agent\mobile
 npm install
 ```
 
-项目已提交 `package-lock.json`，不要随意升级 Expo、React Native 或 React。
+项目已提交 `package-lock.json`，新电脑优先按 lockfile 安装，不要随意升级 Expo、React Native 或 React。
 
-### 9.2 创建移动端 `.env`
+### 9.2 配置移动端 `.env`
 
 ```powershell
 copy .env.example .env
 ```
 
-本机 Web 调试：
+本机 Web 调试可用：
 
 ```text
 EXPO_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1
 ```
 
-Android 模拟器：
+Android 模拟器访问宿主机后端通常需要改成：
 
 ```text
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8000/api/v1
 ```
 
-Android 真机：
+Android 真机需要改成电脑在同一局域网中的 IP，例如：
 
 ```text
-EXPO_PUBLIC_API_URL=http://<电脑局域网IP>:8000/api/v1
+EXPO_PUBLIC_API_URL=http://192.168.1.23:8000/api/v1
 ```
 
-真机调试时，后端必须监听：
+同时后端必须用下面方式监听：
 
 ```powershell
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 9.3 客户端检查
+否则真机无法访问。
+
+### 9.3 客户端基础检查
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent\mobile
@@ -529,73 +669,220 @@ npm run typecheck
 npm run test:unit
 ```
 
+如果 Node 版本过低，Expo SDK 57 相关命令可能失败。先确认：
+
+```powershell
+node --version
+```
+
 ---
 
-## 10. 启动客户端
+## 10. Android 开发环境
 
-### 10.1 Android 模拟器
+### 10.1 安装 JDK
 
-先启动后端和 Android 模拟器，等待 `adb devices` 中的设备状态为
-`device`。
+推荐 Microsoft OpenJDK 17 LTS。
 
-Metro 尚未运行时，在移动端目录执行：
+下载地址：
+
+```text
+https://learn.microsoft.com/java/openjdk/download
+```
+
+安装步骤：
+
+1. 找到 `OpenJDK 17`。
+2. Windows x64 电脑下载：
+
+```text
+microsoft-jdk-17.x.x-windows-x64.exe
+```
+
+3. 双击安装。
+4. 安装选项保持默认即可。
+5. 安装完成后重新打开 PowerShell。
+
+验证：
+
+```powershell
+java -version
+```
+
+期望能看到 17，例如：
+
+```text
+openjdk version "17..."
+```
+
+### 10.2 安装 Android Studio
+
+下载地址：
+
+```text
+https://developer.android.com/studio
+```
+
+安装前确认：
+
+- Windows 是 64 位。
+- BIOS/UEFI 中已开启虚拟化：Intel VT-x 或 AMD-V。
+- 至少预留 16GB 磁盘空间；建议 32GB 以上。
+- 内存建议 16GB 以上，32GB 更稳。
+
+安装步骤：
+
+1. 下载 Android Studio Windows `.exe` 安装包。
+2. 双击安装。
+3. Components 保持默认，确保包含：
+   - Android Studio
+   - Android Virtual Device
+4. 安装完成后首次打开 Android Studio。
+5. 选择 `Standard` 安装模式。
+6. SDK Components 页面确认安装：
+   - Android SDK
+   - Android SDK Platform
+   - Android Virtual Device
+   - Android Emulator
+7. 等待下载完成。
+
+用 Android Studio 安装以下组件：
+
+- Android SDK Platform 36
+- Android SDK Platform-Tools
+- Android SDK Build-Tools
+- Android Emulator
+- 一个 API 36 Pixel AVD
+
+如果首次向导没有装全，手动补装：
+
+1. 打开 Android Studio。
+2. 进入：
+
+```text
+More Actions → SDK Manager
+```
+
+3. 在 `SDK Platforms` 勾选：
+
+```text
+Android 16.0 / API 36
+```
+
+4. 在 `SDK Tools` 勾选：
+
+```text
+Android SDK Platform-Tools
+Android SDK Build-Tools
+Android Emulator
+```
+
+5. 点击 `Apply` 安装。
+
+创建模拟器：
+
+1. 打开：
+
+```text
+More Actions → Virtual Device Manager
+```
+
+2. 点击 `Create Device`。
+3. 选择 Pixel 系列设备，例如 Pixel 7 / Pixel 8。
+4. System Image 选择 API 36。
+5. 下载 system image。
+6. 完成创建后点击启动按钮。
+
+安装后验证 `adb`：
+
+```powershell
+adb version
+adb devices
+```
+
+如果 `adb` 命令不存在，需要把 Android SDK 的 `platform-tools` 加入 PATH。常见路径：
+
+```text
+C:\Users\<你的用户名>\AppData\Local\Android\Sdk\platform-tools
+```
+
+也建议设置环境变量：
+
+```text
+ANDROID_HOME=C:\Users\<你的用户名>\AppData\Local\Android\Sdk
+ANDROID_SDK_ROOT=C:\Users\<你的用户名>\AppData\Local\Android\Sdk
+```
+
+然后把下面两个目录加入 PATH：
+
+```text
+%ANDROID_HOME%\platform-tools
+%ANDROID_HOME%\emulator
+```
+
+改完环境变量后，重新打开 PowerShell。
+
+### 10.3 启动 Android 模拟器运行 App
+
+先启动后端，再启动 Expo：
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent\mobile
-adb wait-for-device
-adb reverse tcp:8000 tcp:8000
-adb reverse tcp:8081 tcp:8081
-npm run android -- --host localhost
+npm run android
 ```
 
-该命令会启动 Metro，并尝试在模拟器的 Expo Go 中打开项目。
-
-模拟器 Cold Boot 后，如果后端和 Metro 终端仍在运行，只需重新建立
-ADB 映射并打开 Expo 项目：
+或者：
 
 ```powershell
-adb wait-for-device
-adb reverse tcp:8000 tcp:8000
-adb reverse tcp:8081 tcp:8081
-adb shell am start -a android.intent.action.VIEW -d "exp://127.0.0.1:8081" host.exp.exponent
+npx expo start
 ```
 
-也可以在完成 `adb reverse` 后，回到 Metro 终端按：
+然后在 Expo 终端中按：
 
 ```text
 a
 ```
 
-`adb reverse` 只建立模拟器到电脑端口的反向映射，不会自行启动
-Expo Go 或打开项目。每次 Cold Boot 后都应重新执行映射。
+---
 
-### 10.2 Android 真机
+## 11. 真机调试
+
+### Android 真机
 
 1. 手机和电脑连接同一个 Wi-Fi。
 2. 手机安装 Expo Go，或后续使用 development build。
-3. `mobile/.env` 使用电脑局域网 IP。
-4. Windows 防火墙允许 8000 端口入站。
-5. 启动后端和 Expo。
+3. `mobile/.env` 中把 API 地址改成电脑局域网 IP：
 
-### 10.3 iOS 真机
+```text
+EXPO_PUBLIC_API_URL=http://<电脑局域网IP>:8000/api/v1
+```
+
+4. 后端监听 `0.0.0.0`：
+
+```powershell
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+5. 如果手机打不开后端，检查 Windows 防火墙是否允许 8000 端口入站。
+
+### iOS 真机
 
 iOS 真机也需要和电脑处于同一局域网，并使用电脑局域网 IP。iOS 模拟器需要 macOS。
 
 ---
 
-## 11. 本地完整启动顺序
+## 12. 本地完整启动顺序
 
-### 11.1 启动数据库
+### 12.1 启动数据库
 
-Docker：
+Docker 方式：
 
 ```powershell
 docker start skin-pg
 ```
 
-本机 PostgreSQL：确认 PostgreSQL 服务已启动。
+本机 PostgreSQL 方式：确认 PostgreSQL 服务已经启动。
 
-### 11.2 启动后端
+### 12.2 启动后端
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent\backend
@@ -604,19 +891,22 @@ alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 11.3 启动客户端
+### 12.3 启动客户端
 
 ```powershell
 cd D:\Mia\llm_learn\projects\skin_care_agent\mobile
-adb wait-for-device
-adb reverse tcp:8000 tcp:8000
-adb reverse tcp:8081 tcp:8081
-npm run android -- --host localhost
+npm run android
+```
+
+或启动 Metro 后手动选择平台：
+
+```powershell
+npx expo start
 ```
 
 ---
 
-## 12. 本地验收清单
+## 13. 本地验收清单
 
 后端：
 
@@ -638,72 +928,56 @@ npm run test:unit
 
 手动验收：
 
-1. App 可进入登录页。
-2. 注册新账号。
-3. 首次协议页出现。
-4. 接受四项协议。
-5. 进入受保护首页。
-6. 退出登录。
-7. 重新登录后会话正常。
+1. 打开 `http://localhost:8000/docs`。
+2. App 可进入登录页。
+3. 注册新账号。
+4. 首次协议页出现。
+5. 接受四项协议。
+6. 进入受保护首页。
+7. 退出登录。
+8. 重新登录后会话正常。
 
 当前项目最新主线还缺 Android/iOS 真机或模拟器页面操作证据；换新电脑后，优先补这个验证。
 
 ---
 
-## 13. 常见问题
+## 14. 常见问题
 
-### 13.1 `winget` 不可用
+### 14.1 `python --version` 不是 3.11+
 
-先执行：
-
-```powershell
-winget --version
-```
-
-如果命令不存在，需要安装或更新 Windows 的 App Installer。
-
-### 13.2 `python --version` 不是 3.11+
+原因：PATH 指向了旧 Python。
 
 处理：
 
-```powershell
-python --version
-where python
-```
+- 安装 Python 3.11 或 3.12；
+- 重新打开 PowerShell；
+- 确认 `python --version`；
+- 必要时用完整路径创建 uv 环境。
 
-如果 PATH 指向旧 Python，卸载旧版本或调整 PATH。
-
-### 13.3 `alembic upgrade head` 连不上数据库
+### 14.2 `alembic upgrade head` 连不上数据库
 
 检查：
 
-```powershell
-docker ps
-psql -U skin -d skin_care -h localhost -p 5432
-```
+- PostgreSQL 是否启动；
+- `DATABASE_URL` 用户名、密码、库名是否和实际一致；
+- 5432 端口是否被其他 PostgreSQL 占用；
+- Docker 容器是否正常运行。
 
-常见原因：
+### 14.3 Android 模拟器访问不了后端
 
-- PostgreSQL 没启动；
-- `DATABASE_URL` 用户名、密码、库名不一致；
-- 5432 端口被其他 PostgreSQL 占用；
-- Docker Desktop 没启动。
-
-### 13.4 Android 模拟器访问不了后端
-
-模拟器里不能用 `127.0.0.1` 访问电脑宿主机，应使用：
+模拟器里不能用 `127.0.0.1` 访问电脑宿主机。改成：
 
 ```text
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8000/api/v1
 ```
 
-后端监听必须是：
+并确认后端监听：
 
 ```powershell
 --host 0.0.0.0
 ```
 
-### 13.5 Android 真机访问不了后端
+### 14.4 Android 真机访问不了后端
 
 检查：
 
@@ -712,20 +986,19 @@ EXPO_PUBLIC_API_URL=http://10.0.2.2:8000/api/v1
 - Windows 防火墙是否放行 8000 端口；
 - 后端是否监听 `0.0.0.0`。
 
-### 13.6 npm / Expo 命令异常
+### 14.5 npm / Expo 命令异常
 
-先确认：
+优先确认 Node：
 
 ```powershell
 node --version
-npm --version
 ```
 
-Expo SDK 57 需要 Node 22.13.x。不要用 Node 18/20 硬跑。
+Expo SDK 57 需要 Node 22.13.x。不要用旧 Node 环境硬跑。
 
 ---
 
-## 14. 上云前的环境准备方向
+## 15. 上云前的环境准备方向
 
 本项目目前本地 MVP 使用：
 
@@ -760,24 +1033,21 @@ Expo SDK 57 需要 Node 22.13.x。不要用 Node 18/20 硬跑。
 
 ---
 
-## 15. 推荐配置顺序
+## 16. 推荐配置顺序
 
 如果你是完全新电脑，按这个顺序做：
 
-1. `winget --version`
-2. 安装 Git。
-3. 安装 Python 3.11+。
-4. 安装 uv。
-5. 安装 Node.js 22。
-6. 安装 Docker Desktop 或 PostgreSQL 16。
-7. 安装 JDK 17。
-8. 安装 Android Studio。
-9. 配置 Android SDK 36、Platform-Tools、Emulator 和 AVD。
-10. 拉取项目代码。
-11. 配置 `backend/.venv` 和 `backend/.env`。
-12. 启动数据库并执行 `alembic upgrade head`。
-13. 下载 `backend/model_assets/` 人脸关键点模型。
-14. 启动后端并验证 `/health`、`/health/db`。
-15. 配置 `mobile/.env`。
-16. 执行 `npm install`、`npm run typecheck`、`npm run test:unit`。
-17. 用 Android 模拟器或真机完成 App 注册、协议、登录、登出验证。
+1. 安装 Git。
+2. 安装 Python 3.11+。
+3. 安装 uv。
+4. 安装 Node.js 22.13.x。
+5. 安装 PostgreSQL 16 或 Docker Desktop。
+6. 拉取项目代码。
+7. 配置 `backend/.venv` 和 `backend/.env`。
+8. 创建数据库并执行 `alembic upgrade head`。
+9. 下载 `backend/model_assets/` 人脸关键点模型。
+10. 启动后端并验证 `/health`、`/health/db`、`/docs`。
+11. 配置 `mobile/.env`。
+12. 执行 `npm install`、`npm run typecheck`、`npm run test:unit`。
+13. 安装 JDK 17、Android Studio、Android SDK 36、AVD。
+14. 用 Android 模拟器或真机完成 App 注册、协议、登录、登出验证。
