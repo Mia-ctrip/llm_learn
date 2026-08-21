@@ -10,6 +10,14 @@
 
 不要把 `docs/dev_notes.md` 或 `docs/temp_step.md` 当作最新进度来源；它们是历史/补充文档。除非用户明确要求，否则不要在这两个文件中记录新的开发进度。
 
+## 📌 产品文档权威规则
+
+- 当前开发与上架版本的产品范围、流程、数据语义、AI 边界和验收标准，只以 `design/product/skin_care_app_mvp_spec.md` 为准。
+- `design/product/skin_care_app_product_spec.md` 只描述长期完整产品，不得覆盖当前 MVP。
+- 实施计划只能细化当前 MVP，不能新增或改写产品规则；标记为 `SUPERSEDED` 的计划禁止执行。
+- `project_background.md` 只提供项目入口和当前状态，`backend/dev_notes.md` 只记录实现进度；二者都不是产品规格。
+- 处理当前 MVP 的产品、设计、代码或测试任务时，必须先读取 MVP 文档；发现其他文档冲突时，以 MVP 文档为准并先修正下游材料。
+
 ---
 
 ## 📝 开发进度日志规则（必须执行）

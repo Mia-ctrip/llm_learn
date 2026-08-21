@@ -1,5 +1,11 @@
 # Backend Product Redesign Implementation Plan
 
+> **状态：SUPERSEDED，禁止继续执行。**
+>
+> 本计划基于已经废弃的两点阶段趋势、产品反应记忆、相似历史和旧事件模型，与当前 MVP 产品规格冲突。保留本文只用于追溯历史设计，不表示任务仍有效。
+>
+> 当前产品事实源：`design/product/skin_care_app_mvp_spec.md`。新的 ACTIVE 实施计划将在 MVP 产品歧义和上架基线全部确认后重新生成。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将现有以今日 Check-in、默认三视角、皮肤评分和开放式问答为中心的后端，迁移为支持统一趋势点、区域持续观察、真实产品使用和证据引导型个人反应记忆的 MVP 后端。
