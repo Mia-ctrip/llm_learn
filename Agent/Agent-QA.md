@@ -1,3 +1,7 @@
+# 理解Agent
+自主 Agent 的核心是 LLM → Action → Observation → LLM 的反馈循环。
+Agent 是一个以 LLM 决策为核心、通过 Action → Observation → 再决策形成反馈循环的运行系统。每轮 LLM inference 会基于当前 Agent State 构造 Context，其中可以包含用户输入、历史决策和 Tool Observation。不同 Agent 框架的差别不仅在 Tool I/O 如何组织进 Context，更在于 Loop、State、Context Management、Control Flow、Tool Execution 和 Runtime Infrastructure 如何设计。
+
 # Agent架构范式
 Agent 构建范式
 │
@@ -12,6 +16,10 @@ Agent 构建范式
 └── 5. 基于规划 (Plan-based)  先完整规划，再按计划执行，分离"思考"和"行动"
 
 # 三种agent架构范式
+- Classic Function Calling 
+- ReAct
+- Function Calling with Thinking/Reasoning
+
 | | Function-calling loop | 经典 ReAct | FC + Reasoning |
 |---|---|---|---|
 | **工具调用** | 结构化 Tool Call | 文本 Action | 结构化 Tool Call |
