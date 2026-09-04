@@ -1,0 +1,14 @@
+"Agent/业务 Agent 从 0 到 1 构建指南.md"
+  h_e5cd53142b29a8 1-799
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.43-trip",
+  "base_commit_sha": "f3a741114ae29ea930593be9d426be401200d380",
+  "prompts": {},
+  "humans": {
+    "h_e5cd53142b29a8": {
+      "author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
