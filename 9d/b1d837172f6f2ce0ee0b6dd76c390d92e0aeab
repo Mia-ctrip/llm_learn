@@ -1,0 +1,14 @@
+GPU/driver/driver排障指南.md
+  h_e5cd53142b29a8 1-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.45-trip",
+  "base_commit_sha": "9db1d837172f6f2ce0ee0b6dd76c390d92e0aeab",
+  "prompts": {},
+  "humans": {
+    "h_e5cd53142b29a8": {
+      "author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
