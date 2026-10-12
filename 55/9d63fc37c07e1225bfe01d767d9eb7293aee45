@@ -1,0 +1,61 @@
+GPU/GPU_Communication/00_通讯全景与度量方法.md
+  s_1ce6e83b0d1650::t_25cc150fbbff55 129-222
+  s_1ce6e83b0d1650::t_023c6cf8b7625a 52-128,223
+  s_1ce6e83b0d1650::t_8c8bfba47bed94 1-51
+  s_1ce6e83b0d1650::t_9e34d27e2c7606 224-288
+  s_1ce6e83b0d1650::t_0a4ba720885910 289-357
+GPU/排障/verify_driver_upgrade.py
+  s_0927c8aebc2409::t_83ed4deffceedc 1-138
+GPU/GPU_Communication/01_卡内通讯.md
+  s_1ce6e83b0d1650::t_621069ddc810e7 69-193
+  s_1ce6e83b0d1650::t_47fb1e817d001a 1-68,194
+GPU/排障/显卡识别案例2.md
+  h_e5cd53142b29a8 1-3
+Agent/CC排障经验积累.md
+  h_e5cd53142b29a8 1-106
+GPU/排障/显卡识别问题.md
+  s_0927c8aebc2409::t_07975629ecb36e 73-92,94-104,132
+  s_0927c8aebc2409::t_5b4c32a53a1c79 46,51-69
+  s_0927c8aebc2409::t_e96e7494c78a56 13-42
+  s_839bc4720e88fb::t_e34a62c7b09a66 1-12,44,70,72,134-141
+  s_0927c8aebc2409::t_a66929ea80b480 43,45,47-50,71,93,105-131,133
+GPU/排障/显卡识别案例记录.md
+  s_839bc4720e88fb::t_7ce34630f674da 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "559d63fc37c07e1225bfe01d767d9eb7293aee45",
+  "prompts": {},
+  "humans": {
+    "h_e5cd53142b29a8": {
+      "author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  },
+  "sessions": {
+    "s_0927c8aebc2409": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9ba23be-5c07-48d4-a0fb-d65c49ddd449",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    },
+    "s_1ce6e83b0d1650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2dcf2009-be72-4ab2-b8f2-c1dcc10e7d38",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    },
+    "s_839bc4720e88fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2bf02691-d460-4f75-be7c-465491b3acde",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
