@@ -1,0 +1,24 @@
+GPU/GPU_Driver/LD_LIBRARY_PATH实现原理.md
+  s_c1d303c239237a::t_e192f68a4d491d 1-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "acfce43ab5f30f9c89925b7dc5315148fbd67de4",
+  "prompts": {},
+  "humans": {
+    "h_e5cd53142b29a8": {
+      "author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  },
+  "sessions": {
+    "s_c1d303c239237a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac7d46bc-e838-4f7b-8671-e3417acab809",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "yumeifeng <yumeifeng@trip.com>"
+    }
+  }
+}
